@@ -5,10 +5,3 @@ endpoints:
     type: openai
     baseURL: "https://api.openai.com/v1"
     apiKey: ${OPENAI_API_KEY}
-
-database:
-  uri: ${MONGO_URI}
-
-auth:
-  jwtSecret: ${JWT_SECRET}
-  jwtExpiresIn: "7d"
