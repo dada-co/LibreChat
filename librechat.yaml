@@ -1,18 +1,14 @@
+version: "1.0.0"
+
+server:
+  host: 0.0.0.0
+  port: ${PORT}
+
 endpoints:
-  - name: openai
-    baseURL: https://api.openai.com/v1
-    models: [ "gpt-4o-mini", "gpt-4.1-mini" ]
+  openai:
+    baseURL: "https://api.openai.com/v1"
+    apiKey: ${OPENAI_API_KEY}
 
-agents:
-  - id: creator-assistant-template
-    name: Creator Companion
-    description: Helps social creators brainstorm & write
-    endpoint: openai
-    model: gpt-4o-mini
-    systemPrompt: |
-      You are a creator’s personal content partner. Follow their brand voice and keep replies sharp and helpful.
-
-memory:
-  enabled: true
-  scope: user
-  maxTokens: 1200
+jwt:
+  secret: ${JWT_SECRET}
+  expiresIn: "7d"
