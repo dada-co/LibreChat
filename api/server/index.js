@@ -62,6 +62,15 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
 
+// Bridge cookie → Authorization so Passport's JWT strategy sees it
+  app.use((req, _res, next) => {
+    if (!req.headers.authorization) {
+      const t = req.cookies?.jwt || req.cookies?.token || req.cookies?.accessToken;
+      if (t) req.headers.authorization = `Bearer ${t}`;
+    }
+    next();
+  });
+
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
   } else {
