@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import _axios from 'axios';
+_axios.defaults.withCredentials = true;
 import { URL } from 'url';
 import crypto from 'crypto';
 import { load } from 'js-yaml';
