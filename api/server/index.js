@@ -120,6 +120,8 @@ const startServer = async () => {
   });
 
   /* API Endpoints */
+  // ✅ Magic link routes BEFORE ErrorController & catch-all
+  app.use('/', magicRoutes);
   app.use('/oauth', routes.oauth);
   app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
@@ -150,9 +152,6 @@ const startServer = async () => {
   app.use('/api/permissions', routes.accessPermissions);
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
-
-  // ✅ Magic link routes BEFORE ErrorController & catch-all
-  app.use('/', magicRoutes);
 
   app.use(ErrorController);
 
