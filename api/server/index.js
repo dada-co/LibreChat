@@ -1,17 +1,21 @@
+// api/server/index.js
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
+
+const { logger } = require('@librechat/data-schemas');
 const { isEnabled, ErrorController } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
+
 const validateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
@@ -21,15 +25,16 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+
 const adminUsers = require('../routes/admin.users');
 const magicRoutes = require('../routes/magic');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
-// Allow PORT=0 to be used for automatic free port assignment
-const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
-const host = HOST || 'localhost';
-const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
+// Heroku needs 0.0.0.0; fall back to that when running on a dyno
+const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
+const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
+const trusted_proxy = Number(TRUST_PROXY) || 1;
 
 const app = express();
 
@@ -37,12 +42,10 @@ const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
-  await connectDb();
 
+  await connectDb();
   logger.info('Connected to MongoDB');
-  indexSync().catch((err) => {
-    logger.error('[indexSync] Background sync failed:', err);
-  });
+  indexSync().catch((err) => logger.error('[indexSync] Background sync failed:', err));
 
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
@@ -62,10 +65,11 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
 
-// Bridge cookie → Authorization so Passport's JWT strategy sees it
+  // 🔐 Bridge cookie → Authorization so Passport's JWT strategy sees it
   app.use((req, _res, next) => {
     if (!req.headers.authorization) {
-      const t = req.cookies?.jwt || req.cookies?.token || req.cookies?.accessToken;
+      const c = req.cookies || {};
+      const t = c.jwt || c.token || c.accessToken;
       if (t) req.headers.authorization = `Bearer ${t}`;
     }
     next();
@@ -86,12 +90,12 @@ const startServer = async () => {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
 
-  /* OAUTH */
+  /* OAUTH / Passport */
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
 
-  /* LDAP Auth */
+  /* LDAP Auth (optional) */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
@@ -100,8 +104,8 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
-  app.use('/oauth', routes.oauth);
   /* API Endpoints */
+  app.use('/oauth', routes.oauth);
   app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
   app.use('/api/actions', routes.actions);
@@ -129,14 +133,15 @@ const startServer = async () => {
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
   app.use('/api/permissions', routes.accessPermissions);
-
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
 
+  // ✅ Magic link routes BEFORE ErrorController & catch-all
   app.use('/', magicRoutes);
 
   app.use(ErrorController);
 
+  // SPA catch-all – keep LAST
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -153,13 +158,10 @@ const startServer = async () => {
 
   app.listen(port, host, () => {
     if (host === '0.0.0.0') {
-      logger.info(
-        `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
-      );
+      logger.info(`Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`);
     } else {
-      logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+      logger.info(`Server listening at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
-
     initializeMCPs(app).then(() => checkMigrations());
   });
 };
@@ -171,37 +173,22 @@ process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
     logger.error('There was an uncaught error:', err);
   }
-
-  if (err.message.includes('abort')) {
-    logger.warn('There was an uncatchable AbortController error.');
-    return;
-  }
-
+  if (err.message.includes('abort')) return logger.warn('There was an uncatchable AbortController error.');
   if (err.message.includes('GoogleGenerativeAI')) {
-    logger.warn(
-      '\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303',
-    );
-    return;
+    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303');
   }
-
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
       logger.warn('Meilisearch error, search will be disabled');
       messageCount++;
     }
-
     return;
   }
-
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error(
-      '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
-    );
+    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.');
     return;
   }
-
   process.exit(1);
 });
 
-/** Export app for easier testing purposes */
 module.exports = app;
