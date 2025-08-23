@@ -7,3 +7,7 @@ import type * as t from '~/types';
 export function createUserModel(mongoose: typeof import('mongoose')) {
   return mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
 }
+userSchema.add({
+  openaiAssistantId: { type: String, default: null },
+  openaiVectorStoreId: { type: String, default: null },
+});
