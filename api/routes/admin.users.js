@@ -1,6 +1,6 @@
 // api/routes/admin.users.js
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 
 const router = express.Router();
