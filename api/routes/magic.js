@@ -7,22 +7,25 @@ const router = express.Router();
 
 const MAGIC_SECRET = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
 
-// Reuse your existing User model registered by the app
-// e.g., const User = mongoose.model('User'); (we'll query inside handler)
-
-// Set cookies similar to normal login
+// cookie helper (SameSite=None + Secure for cross-site redirect reliability)
 function setAuthCookies(res, accessToken, refreshToken) {
+  const oneHour    = 60 * 60 * 1000;
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
   const base = {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: true, // Heroku uses HTTPS
+    sameSite: 'none',     // <- important: survive cross-site redirects
+    secure: true,         // <- required with SameSite=None (Heroku is HTTPS)
     path: '/',
   };
-  // cover common cookie names used by different builds
-  res.cookie('token', accessToken, base);
-  res.cookie('jwt', accessToken, base);
-  res.cookie('accessToken', accessToken, base);
-  if (refreshToken) res.cookie('refreshToken', refreshToken, base);
+
+  // canonical names
+  res.cookie('jwt', accessToken, { ...base, maxAge: oneHour });
+  res.cookie('refreshToken', refreshToken, { ...base, maxAge: thirtyDays });
+
+  // extra names for broader compatibility with some builds
+  res.cookie('token', accessToken, { ...base, maxAge: oneHour });
+  res.cookie('accessToken', accessToken, { ...base, maxAge: oneHour });
 }
 
 // PUBLIC: consume the magic link → set cookies → redirect to app
@@ -31,23 +34,34 @@ router.get('/m/:token', async (req, res) => {
   try {
     const { token } = req.params;
     const payload = jwt.verify(token, MAGIC_SECRET, { audience: 'magic-link' });
-    const userId = payload.sub;
+    const userId = String(payload.sub);
 
+    // use already-registered model
     const User = mongoose.model('User');
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).lean();
     if (!user) return res.status(404).send('User not found');
 
-    // access token
+    // --- build an access payload most JWT strategies accept ---
+    const accessPayload = {
+      sub: userId,
+      id: userId,
+      _id: userId,
+      email: user.email,
+      name: user.name,
+      role: user.role ?? 'user',
+      roles: user.roles ?? (user.role ? [user.role] : ['user']),
+      provider: 'magic',
+    };
+
     const access = jwt.sign(
-      { sub: userId, id: userId, _id: userId, email: user.email },
+      accessPayload,
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '1h' },
     );
 
-    // refresh token (fallback to other names if needed)
     const refreshSecret =
-      process.env.REFRESH_TOKEN_SECRET ||
       process.env.JWT_REFRESH_SECRET ||
+      process.env.REFRESH_TOKEN_SECRET ||
       process.env.JWT_SECRET;
 
     const refresh = jwt.sign(
