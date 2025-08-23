@@ -81,4 +81,15 @@ router.get('/m/:token', async (req, res) => {
   try {
     const r = await fetch('/api/user', { credentials: 'include' });
     if (r.ok) location.replace('${target}?cb=' + Date.now());
-    else      location.rep
+    else      location.replace('/login?from=magic&err=unauthorized');
+  } catch {
+    location.replace('/login?from=magic&err=network');
+  }
+})();
+</script>`);
+  } catch {
+    return res.status(401).send('Invalid or expired link');
+  }
+});
+
+module.exports = router;
