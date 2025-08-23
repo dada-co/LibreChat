@@ -21,6 +21,7 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const adminUsers = require('./routes/admin.users');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -91,6 +92,7 @@ const startServer = async () => {
 
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
+  app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
