@@ -22,6 +22,7 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const adminUsers = require('../routes/admin.users');
+const magicRoutes = require('../routes/magic');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -122,6 +123,8 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+
+  app.use('/', magicRoutes);
 
   app.use(ErrorController);
 
