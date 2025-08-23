@@ -5,149 +5,159 @@ const mongoose = require('mongoose');
 
 const router = express.Router();
 
-const MAGIC_SECRET = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
-const JWT_SECRET = process.env.JWT_SECRET;
+const ACCESS_SECRET  = process.env.JWT_SECRET;
+const REFRESH_SECRET =
+  process.env.REFRESH_TOKEN_SECRET ||
+  process.env.JWT_REFRESH_SECRET ||
+  process.env.JWT_SECRET;
 
-// --- cookie helper: robust attributes for cross-site redirect reliability ---
-function setAuthCookies(res, accessToken, refreshToken) {
-  const oneHour    = 60 * 60 * 1000;             // 1h
-  const thirtyDays = 30 * 24 * 60 * 60 * 1000;   // 30d
+const ACCESS_TTL  = process.env.JWT_EXPIRES_IN || '1h';
+const REFRESH_TTL = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+const MAGIC_SECRET = process.env.MAGIC_LINK_SECRET || ACCESS_SECRET;
 
-  // Host-only cookies (no "domain"), survive cross-site via SameSite=None
-  const base = {
-    httpOnly: true,
-    secure: true,      // required with SameSite=None (Heroku is HTTPS)
-    sameSite: 'none',
-    path: '/',
-  };
+// unified cookie options (must survive cross-site redirect)
+const ONE_HOUR_MS   = 60 * 60 * 1000;
+const THIRTY_D_MS   = 30 * 24 * 60 * 60 * 1000;
+const BASE_COOKIE = {
+  httpOnly: true,
+  secure: true,          // Heroku uses HTTPS
+  sameSite: 'none',      // <- IMPORTANT for redirect flow
+  path: '/',
+};
 
-  // Canonical cookie names
-  res.cookie('jwt', accessToken,            { ...base, maxAge: oneHour });
-  res.cookie('refreshToken', refreshToken,  { ...base, maxAge: thirtyDays });
-
-  // Compatibility cookie names some builds expect
-  res.cookie('token', accessToken,          { ...base, maxAge: oneHour });
-  res.cookie('accessToken', accessToken,    { ...base, maxAge: oneHour });
-}
-
-// --- GET /m/:token : consume magic link, set cookies, serve handshake page ---
-router.get('/m/:token', async (req, res) => {
-  try {
-    if (!MAGIC_SECRET || !JWT_SECRET) {
-      return res.status(500).send('Server auth not configured');
-    }
-
-    const { token } = req.params;
-    // Verify the short-lived magic token we generated out-of-band
-    const payload = jwt.verify(token, MAGIC_SECRET, { audience: 'magic-link' });
-    const userId = String(payload.sub);
-
-    // Use the already-registered User model
-    const User = mongoose.model('User');
-    const user = await User.findById(userId).lean();
-    if (!user) return res.status(404).send('User not found');
-
-    // Build access payload with common claims most JWT strategies expect
-    const accessPayload = {
-      sub: userId,
-      id: userId,
-      _id: userId,
+function signAccess(user) {
+  const sub = String(user._id);
+  return jwt.sign(
+    {
+      sub,
+      id: sub,
+      _id: sub,
       email: user.email,
       name: user.name,
-      role: user.role ?? 'user',
-      roles: user.roles ?? (user.role ? [user.role] : ['user']),
+      role: user.role || 'user',
+      roles: Array.isArray(user.roles) ? user.roles : [user.role || 'user'],
       provider: 'magic',
-    };
+    },
+    ACCESS_SECRET,
+    { expiresIn: ACCESS_TTL }
+  );
+}
 
-    const access = jwt.sign(
-      accessPayload,
-      JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' },
-    );
+function signRefresh(user) {
+  const sub = String(user._id);
+  return jwt.sign({ sub }, REFRESH_SECRET, { expiresIn: REFRESH_TTL });
+}
 
-    const refreshSecret =
-      process.env.JWT_REFRESH_SECRET ||
-      process.env.REFRESH_TOKEN_SECRET ||
-      JWT_SECRET;
+function setAuthCookies(res, access, refresh) {
+  res.cookie('jwt', access,        { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
+  res.cookie('token', access,      { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
+  res.cookie('accessToken', access,{ ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
+  res.cookie('refreshToken', refresh, { ...BASE_COOKIE, maxAge: THIRTY_D_MS });
+}
 
-    const refresh = jwt.sign(
-      { sub: userId },
-      refreshSecret,
-      { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '30d' },
-    );
+/** Magic link consumer: /m/:token  (aud: "magic-link") */
+router.get('/m/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const payload = jwt.verify(token, MAGIC_SECRET, { audience: 'magic-link' });
+    const userId = payload.sub;
+
+    const User = mongoose.model('User');
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).send('User not found');
+
+    // issue tokens
+    const access  = signAccess(user);
+    const refresh = signRefresh(user);
+
+    // persist refresh token so the built-in /api/auth/refresh logic (and our shim) consider it valid
+    if (!Array.isArray(user.refreshToken)) user.refreshToken = [];
+    if (!user.refreshToken.includes(refresh)) {
+      user.refreshToken.push(refresh);
+      await user.save();
+    }
 
     setAuthCookies(res, access, refresh);
 
-    // Handshake page: prove session via /api/user (with refresh fallback) then navigate
-    const target = '/c/new'; // change if you want a different landing route
-    res
-      .status(200)
-      .set({
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Content-Type': 'text/html; charset=utf-8',
-      })
-      .send(`<!doctype html>
-<meta http-equiv="cache-control" content="no-store">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Signing you in…</title>
-<style>
-  :root { color-scheme: light dark }
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px}
-  .muted{opacity:.7}
-  code{background:rgba(0,0,0,.05);padding:.2em .4em;border-radius:4px}
-</style>
-<h1>Signing you in…</h1>
-<p class="muted">One moment while we verify your session.</p>
-<pre id="log" class="muted" style="white-space:pre-wrap"></pre>
-<script>
-(async () => {
-  const target = ${JSON.stringify(target)};
-  const log = (m) => { try { const el = document.getElementById('log'); el.textContent += m + "\\n"; } catch(_){} };
-
-  async function getUser() {
-    return fetch('/api/user?cb=' + Date.now(), {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { 'cache-control': 'no-store', 'pragma': 'no-cache' },
-    });
-  }
-
-  async function refresh() {
-    return fetch('/api/auth/refresh?cb=' + Date.now(), {
-      method: 'POST',
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { 'cache-control': 'no-store', 'pragma': 'no-cache' },
-    });
-  }
-
-  try {
-    let r = await getUser();
-    log('GET /api/user → ' + r.status);
-    if (r.ok) return location.replace(target + '?cb=' + Date.now());
-
-    if (r.status === 401) {
-      const rr = await refresh();
-      log('POST /api/auth/refresh → ' + rr.status);
-      if (rr.ok) {
-        r = await getUser();
-        log('GET /api/user (after refresh) → ' + r.status);
-        if (r.ok) return location.replace(target + '?cb=' + Date.now());
+    // small HTML bootstrap page that verifies and then lands in the app
+    const target = (req.query.to && String(req.query.to)) || '/c/new';
+    res.type('html').send(`<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Signing you in…</title></head>
+<body style="font-family: system-ui, sans-serif; display:grid; place-items:center; height:100dvh;">
+  <div>Signing you in…</div>
+  <script>
+    (async () => {
+      try {
+        const r = await fetch('/api/auth/session', { credentials: 'include' });
+        if (r.ok) {
+          location.replace('${target}?cb=' + Date.now());
+        } else {
+          location.replace('/login?from=magic&err=session');
+        }
+      } catch {
+        location.replace('/login?from=magic&err=network');
       }
-    }
-
-    try { const txt = await r.text(); if (txt) log('Response body: ' + txt); } catch {}
-    location.replace('/login?from=magic&err=session');
-  } catch (e) {
-    log('Network error: ' + (e && e.message ? e.message : e));
-    location.replace('/login?from=magic&err=network');
-  }
-})();
-</script>`);
+    })();
+  </script>
+</body></html>`);
   } catch (e) {
     return res.status(401).send('Invalid or expired link');
+  }
+});
+
+/** Minimal session probe used by the client on boot */
+router.get('/api/auth/session', (req, res) => {
+  try {
+    const raw =
+      req.cookies?.jwt ||
+      req.cookies?.token ||
+      req.cookies?.accessToken ||
+      (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
+    if (!raw) return res.status(401).end();
+    const decoded = jwt.verify(raw, ACCESS_SECRET);
+    return res.json({
+      ok: true,
+      user: {
+        id: decoded.sub,
+        email: decoded.email,
+        name: decoded.name,
+        roles: decoded.roles || [decoded.role || 'user'],
+        provider: 'magic',
+      },
+    });
+  } catch {
+    return res.status(401).end();
+  }
+});
+
+/** Refresh shim: re-issue access token from refresh cookie (method-agnostic) */
+router.all('/api/auth/refresh', async (req, res) => {
+  try {
+    const rt = req.cookies?.refreshToken;
+    if (!rt) return res.status(401).end();
+
+    const { sub } = jwt.verify(rt, REFRESH_SECRET);
+    const User = mongoose.model('User');
+    const user = await User.findById(sub);
+    if (!user) return res.status(401).end();
+
+    // optionally enforce DB presence of refresh token
+    if (!Array.isArray(user.refreshToken) || !user.refreshToken.includes(rt)) {
+      // if you want to be strict, reject here:
+      // return res.status(401).end();
+      // for smoother UX, accept once and persist:
+      user.refreshToken = Array.isArray(user.refreshToken) ? user.refreshToken : [];
+      user.refreshToken.push(rt);
+      await user.save();
+    }
+
+    const access = signAccess(user);
+    setAuthCookies(res, access, rt);
+    return res.json({ ok: true });
+  } catch {
+    return res.status(401).end();
   }
 });
 
