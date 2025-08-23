@@ -1,5 +1,4 @@
 import axios from 'axios';
-axios.defaults.withCredentials = true;
 
 export function setAcceptLanguageHeader(value: string): void {
   axios.defaults.headers.common['Accept-Language'] = value;
