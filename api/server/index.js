@@ -11,6 +11,7 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
+const jwt = require('jsonwebtoken'); // <-- NEW
 
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, ErrorController } = require('@librechat/api');
@@ -103,6 +104,20 @@ const startServer = async () => {
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
+
+  // ✅ Session shim: report "logged in" if a valid Bearer JWT is present.
+  //    MUST be before mounting routes.auth so SPA boot doesn't 401.
+  app.get('/api/auth/session', (req, res, next) => {
+    try {
+      const h = req.headers.authorization || '';
+      const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+      if (!token) return next();
+      jwt.verify(token, process.env.JWT_SECRET);
+      return res.status(200).json({ ok: true, authenticated: true });
+    } catch {
+      return next();
+    }
+  });
 
   /* API Endpoints */
   app.use('/oauth', routes.oauth);
