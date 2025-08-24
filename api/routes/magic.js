@@ -5,69 +5,34 @@ const mongoose = require('mongoose');
 
 const router = express.Router();
 
-const ACCESS_SECRET  = process.env.JWT_SECRET;
+const MAGIC_SECRET = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
+const ACCESS_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const REFRESH_SECRET =
-  process.env.REFRESH_TOKEN_SECRET ||
-  process.env.JWT_REFRESH_SECRET ||
-  process.env.JWT_SECRET;
+  process.env.REFRESH_TOKEN_SECRET || process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+const REFRESH_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
 
-const ACCESS_TTL  = process.env.JWT_EXPIRES_IN || '1h';
-const REFRESH_TTL = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
-const MAGIC_SECRET = process.env.MAGIC_LINK_SECRET || ACCESS_SECRET;
-
-// unified cookie options (must survive cross-site redirect)
-const ONE_HOUR_MS   = 60 * 60 * 1000;
-const THIRTY_D_MS   = 30 * 24 * 60 * 60 * 1000;
-const BASE_COOKIE = {
-  httpOnly: true,
-  secure: true,          // Heroku uses HTTPS
-  sameSite: 'none',      // <- IMPORTANT for redirect flow
-  path: '/',
-};
-
-function signAccess(user) {
-  const sub = String(user._id);
-  return jwt.sign(
-    {
-      sub,
-      id: sub,
-      _id: sub,
-      email: user.email,
-      name: user.name,
-      role: user.role || 'user',
-      roles: Array.isArray(user.roles) ? user.roles : [user.role || 'user'],
-      provider: 'magic',
-    },
-    ACCESS_SECRET,
-    { expiresIn: ACCESS_TTL }
-  );
-}
-
-function signRefresh(user) {
-  const sub = String(user._id);
-  return jwt.sign({ sub }, REFRESH_SECRET, { expiresIn: REFRESH_TTL });
-}
-
-// keep these near the top of magic.js if not already defined
 const ONE_HOUR_MS  = 60 * 60 * 1000;
 const THIRTY_D_MS  = 30 * 24 * 60 * 60 * 1000;
-const BASE_COOKIE  = { sameSite: 'none', secure: true, path: '/' };
 
-// REPLACE your current setAuthCookies with this version
-function setAuthCookies(res, access, refresh) {
-  // HttpOnly cookies for server-side auth
-  res.cookie('jwt',          access,  { ...BASE_COOKIE, httpOnly: true,  maxAge: ONE_HOUR_MS });
-  res.cookie('refreshToken', refresh, { ...BASE_COOKIE, httpOnly: true,  maxAge: THIRTY_D_MS });
+function setAuthCookies(res, accessToken, refreshToken) {
+  const base = {
+    httpOnly: true,
+    sameSite: 'none', // survive redirects (required with Secure)
+    secure: true,     // Heroku is HTTPS
+    path: '/',
+  };
 
-  // Readable, one-shot cookie to seed localStorage.token in the client
-  res.cookie('appToken',     access,  { ...BASE_COOKIE, httpOnly: false, maxAge: ONE_HOUR_MS });
-
-  // Remove legacy/confusing names the client might check
-  res.clearCookie('token',       { ...BASE_COOKIE });
-  res.clearCookie('accessToken', { ...BASE_COOKIE });
+  res.cookie('jwt', accessToken,        { ...base, maxAge: ONE_HOUR_MS });
+  res.cookie('token', accessToken,      { ...base, maxAge: ONE_HOUR_MS });
+  res.cookie('accessToken', accessToken,{ ...base, maxAge: ONE_HOUR_MS });
+  res.cookie('refreshToken', refreshToken, { ...base, maxAge: THIRTY_D_MS });
 }
 
-/** Magic link consumer: /m/:token  (aud: "magic-link") */
+/**
+ * GET /m/:token
+ * Verifies the magic token, issues access/refresh cookies, then redirects to a
+ * server-rendered handshake page that seeds localStorage and checks /api/user.
+ */
 router.get('/m/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -78,99 +43,97 @@ router.get('/m/:token', async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).send('User not found');
 
-    // issue tokens
-    const access  = signAccess(user);
-    const refresh = signRefresh(user);
+    // Build the access token with the fields your UI may expect
+    const access = jwt.sign(
+      {
+        sub: userId,
+        id: userId,
+        _id: userId,
+        email: user.email,
+        name: user.name || '',
+        role: user.role || 'user',
+        roles: [user.role || 'user'],
+        provider: 'magic',
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: ACCESS_EXPIRES_IN },
+    );
 
-    // persist refresh token so the built-in /api/auth/refresh logic (and our shim) consider it valid
-    if (!Array.isArray(user.refreshToken)) user.refreshToken = [];
-    if (!user.refreshToken.includes(refresh)) {
-      user.refreshToken.push(refresh);
-      await user.save();
-    }
+    const refresh = jwt.sign({ sub: userId }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES_IN });
 
     setAuthCookies(res, access, refresh);
 
-    // small HTML bootstrap page that verifies and then lands in the app
-    const target = (req.query.to && String(req.query.to)) || '/c/new';
-    res.type('html').send(`<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Signing you in…</title></head>
-<body style="font-family: system-ui, sans-serif; display:grid; place-items:center; height:100dvh;">
-  <div>Signing you in…</div>
-  <script>
-    (async () => {
-      try {
-        const r = await fetch('/api/auth/session', { credentials: 'include' });
-        if (r.ok) {
-          location.replace('${target}?cb=' + Date.now());
-        } else {
-          location.replace('/login?from=magic&err=session');
-        }
-      } catch {
-        location.replace('/login?from=magic&err=network');
-      }
-    })();
-  </script>
-</body></html>`);
+    // redirect to handshake page which will seed localStorage and verify /api/user
+    return res.redirect('/m/signed');
   } catch (e) {
     return res.status(401).send('Invalid or expired link');
   }
 });
 
-/** Minimal session probe used by the client on boot */
-router.get('/api/auth/session', (req, res) => {
-  try {
-    const raw =
-      req.cookies?.jwt ||
-      req.cookies?.token ||
-      req.cookies?.accessToken ||
-      (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-
-    if (!raw) return res.status(401).end();
-    const decoded = jwt.verify(raw, ACCESS_SECRET);
-    return res.json({
-      ok: true,
-      user: {
-        id: decoded.sub,
-        email: decoded.email,
-        name: decoded.name,
-        roles: decoded.roles || [decoded.role || 'user'],
-        provider: 'magic',
-      },
-    });
-  } catch {
-    return res.status(401).end();
-  }
-});
-
-/** Refresh shim: re-issue access token from refresh cookie (method-agnostic) */
-router.all('/api/auth/refresh', async (req, res) => {
-  try {
-    const rt = req.cookies?.refreshToken;
-    if (!rt) return res.status(401).end();
-
-    const { sub } = jwt.verify(rt, REFRESH_SECRET);
-    const User = mongoose.model('User');
-    const user = await User.findById(sub);
-    if (!user) return res.status(401).end();
-
-    // optionally enforce DB presence of refresh token
-    if (!Array.isArray(user.refreshToken) || !user.refreshToken.includes(rt)) {
-      // if you want to be strict, reject here:
-      // return res.status(401).end();
-      // for smoother UX, accept once and persist:
-      user.refreshToken = Array.isArray(user.refreshToken) ? user.refreshToken : [];
-      user.refreshToken.push(rt);
-      await user.save();
+/**
+ * GET /m/signed
+ * This page runs in the browser. It:
+ * 1) Seeds localStorage.token with the server-seen jwt cookie value
+ * 2) Calls /api/user (credentials: 'include') to ensure the session is good
+ * 3) Sends you into the app (/) or to /login on failure
+ */
+router.get('/m/signed', (req, res) => {
+  // Read back the jwt cookie server-side and safely embed for localStorage
+  const jwtCookie = req.cookies?.jwt || '';
+  const userId = (() => {
+    try {
+      const decoded = jwt.decode(jwtCookie) || {};
+      return decoded.sub || decoded.id || decoded._id || '';
+    } catch {
+      return '';
     }
+  })();
 
-    const access = signAccess(user);
-    setAuthCookies(res, access, rt);
-    return res.json({ ok: true });
-  } catch {
-    return res.status(401).end();
-  }
+  const seedJWT = JSON.stringify(jwtCookie); // safe escaping for inline script
+  const seedUID = JSON.stringify(userId);
+
+  res.type('html').send(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Signing you in…</title>
+  <meta name="robots" content="noindex" />
+  <style>
+    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+         display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d0d0d;color:#fff}
+    .box{max-width:520px;text-align:center}
+    .sub{opacity:.7;font-size:14px;margin-top:8px}
+    code{background:#1a1a1a;padding:2px 6px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div>🔑 Signing you in…</div>
+    <div class="sub">If this hangs, refresh the page.</div>
+  </div>
+  <script>
+    (async () => {
+      try {
+        // Seed localStorage for UIs that expect a token in web storage
+        localStorage.setItem('token', ${seedJWT});
+        if (${seedUID}) localStorage.setItem('userId', ${seedUID});
+
+        // Verify the session with the API
+        const r = await fetch('/api/user', { credentials: 'include' });
+        if (!r.ok) throw new Error('unauthorized');
+
+        // Nudge some UIs that key off a flag
+        try { localStorage.setItem('loggedIn', '1'); } catch {}
+
+        // Enter the app
+        location.replace('/?from=magic&cb=' + Date.now());
+      } catch (err) {
+        location.replace('/login?from=magic&err=' + encodeURIComponent(String(err && err.message || 'unknown')));
+      }
+    })();
+  </script>
+</body>
+</html>`);
 });
 
 module.exports = router;
