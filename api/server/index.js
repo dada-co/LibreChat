@@ -38,7 +38,6 @@ const {
   PUBLIC_URL,
 } = process.env ?? {};
 
-// Heroku binds on 0.0.0.0
 const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
 const trusted_proxy = Number(TRUST_PROXY) || 1;
@@ -62,20 +61,16 @@ const startServer = async () => {
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
-  // inject bootstrap that seeds localStorage.token from appToken cookie (safe no-op if missing)
-  const BOOTSTRAP = `<script>(function(){try{var m=document.cookie.match(/(?:^|;\\s*)appToken=([^;]+)/);if(m){localStorage.setItem('token',m[1]);localStorage.setItem('auth','1');document.cookie='appToken=; Max-Age=0; path=/; SameSite=None; Secure';}}catch(e){}})();</script>`;
-  const indexWithBootstrap = indexHTML.replace('</body>', `${BOOTSTRAP}</body>`);
-
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  /* Middleware */
+  // ---- Middleware ----
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(cookieParser());
 
-  // CORS (allow credentials; origin echo or PUBLIC_URL if set)
+  // CORS w/ credentials
   app.use(
     cors({
       origin: PUBLIC_URL || true,
@@ -83,8 +78,7 @@ const startServer = async () => {
     }),
   );
 
-  // 🔐 Bridge cookie → Authorization so Passport's JWT strategy sees it
-  // Only trust the HttpOnly 'jwt' cookie (do NOT read legacy 'token'/'accessToken')
+  // Bridge cookie -> Authorization for Passport JWT
   app.use((req, _res, next) => {
     if (!req.headers.authorization) {
       const t = req.cookies?.jwt;
@@ -95,34 +89,25 @@ const startServer = async () => {
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
-  } else {
-    console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
-  // Static assets (aggressive caching)
+  // Static assets
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
 
-  if (!ALLOW_SOCIAL_LOGIN) {
-    console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
-  }
-
-  /* Passport */
+  // ---- Auth strategies ----
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
-
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
-
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
 
-  /* Routes */
-  // ✅ magic link routes FIRST (before ErrorController and SPA catch-all)
+  // ---- Routes (magic FIRST) ----
   app.use('/', magicRoutes);
 
   app.use('/oauth', routes.oauth);
@@ -158,7 +143,7 @@ const startServer = async () => {
 
   app.use(ErrorController);
 
-  // SPA catch-all (keep LAST)
+  // SPA catch-all
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -168,17 +153,14 @@ const startServer = async () => {
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
-    const updatedIndexHtml = indexWithBootstrap.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
     res.type('html');
     res.send(updatedIndexHtml);
   });
 
   app.listen(port, host, () => {
-    if (host === '0.0.0.0') {
-      logger.info(`Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`);
-    } else {
-      logger.info(`Server listening at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
-    }
+    const where = host === '0.0.0.0' ? `http://localhost:${port}` : `http://${host}:${port}`;
+    logger.info(`Server listening at ${where}`);
     initializeMCPs(app).then(() => checkMigrations());
   });
 };
@@ -192,7 +174,7 @@ process.on('uncaughtException', (err) => {
   }
   if (err.message.includes('abort')) return logger.warn('There was an uncatchable AbortController error.');
   if (err.message.includes('GoogleGenerativeAI')) {
-    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303');
+    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue.');
   }
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
@@ -202,7 +184,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('\n\nAn Uncaught \`OpenAIError\` error may be due to your reverse-proxy setup or stream configuration, or a bug in the \`openai\` node package.');
+    logger.error('\n\nAn uncaught OpenAI error may be due to reverse-proxy/stream config or an upstream bug.');
     return;
   }
   process.exit(1);
