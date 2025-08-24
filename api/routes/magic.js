@@ -48,11 +48,23 @@ function signRefresh(user) {
   return jwt.sign({ sub }, REFRESH_SECRET, { expiresIn: REFRESH_TTL });
 }
 
+// keep these near the top of magic.js if not already defined
+const ONE_HOUR_MS  = 60 * 60 * 1000;
+const THIRTY_D_MS  = 30 * 24 * 60 * 60 * 1000;
+const BASE_COOKIE  = { sameSite: 'none', secure: true, path: '/' };
+
+// REPLACE your current setAuthCookies with this version
 function setAuthCookies(res, access, refresh) {
-  res.cookie('jwt', access,        { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
-  res.cookie('token', access,      { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
-  res.cookie('accessToken', access,{ ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
-  res.cookie('refreshToken', refresh, { ...BASE_COOKIE, maxAge: THIRTY_D_MS });
+  // HttpOnly cookies for server-side auth
+  res.cookie('jwt',          access,  { ...BASE_COOKIE, httpOnly: true,  maxAge: ONE_HOUR_MS });
+  res.cookie('refreshToken', refresh, { ...BASE_COOKIE, httpOnly: true,  maxAge: THIRTY_D_MS });
+
+  // Readable, one-shot cookie to seed localStorage.token in the client
+  res.cookie('appToken',     access,  { ...BASE_COOKIE, httpOnly: false, maxAge: ONE_HOUR_MS });
+
+  // Remove legacy/confusing names the client might check
+  res.clearCookie('token',       { ...BASE_COOKIE });
+  res.clearCookie('accessToken', { ...BASE_COOKIE });
 }
 
 /** Magic link consumer: /m/:token  (aud: "magic-link") */
