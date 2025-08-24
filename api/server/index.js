@@ -1,185 +1,45 @@
-// api/server/index.js
-require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
-require('module-alias')({ base: path.resolve(__dirname, '..') });
+// Toggle with MAGIC_DEBUG=true
+const MAGIC_DEBUG = String(process.env.MAGIC_DEBUG || '').toLowerCase() === 'true';
+const red = (s, head = 10, tail = 6) =>
+  !s ? '∅' : (s.length <= head + tail ? s : `${s.slice(0, head)}…${s.slice(-tail)}`);
 
-const cors = require('cors');
-const axios = require('axios');
-const express = require('express');
-const passport = require('passport');
-const compression = require('compression');
-const cookieParser = require('cookie-parser');
-const mongoSanitize = require('express-mongo-sanitize');
-
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, ErrorController } = require('@librechat/api');
-const { connectDb, indexSync } = require('~/db');
-
-const validateImageRequest = require('./middleware/validateImageRequest');
-const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { checkMigrations } = require('./services/start/migration');
-const initializeMCPs = require('./services/initializeMCPs');
-const configureSocialLogins = require('./socialLogins');
-const AppService = require('./services/AppService');
-const staticCache = require('./utils/staticCache');
-const noIndex = require('./middleware/noIndex');
-const routes = require('./routes');
-
-const adminUsers = require('../routes/admin.users');
-const magicRoutes = require('../routes/magic');
-
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
-
-// Heroku: bind on 0.0.0.0
-const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
-const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
-const trusted_proxy = Number(TRUST_PROXY) || 1;
-
-const app = express();
-
-const startServer = async () => {
-  if (typeof Bun !== 'undefined') {
-    axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
-  }
-
-  await connectDb();
-  logger.info('Connected to MongoDB');
-  indexSync().catch((err) => logger.error('[indexSync] Background sync failed:', err));
-
-  app.disable('x-powered-by');
-  app.set('trust proxy', trusted_proxy);
-
-  await AppService(app);
-
-  const indexPath = path.join(app.locals.paths.dist, 'index.html');
-  const indexHTML = fs.readFileSync(indexPath, 'utf8');
-
-  app.get('/health', (_req, res) => res.status(200).send('OK'));
-
-  // ---------- middleware ----------
-  app.use(noIndex);
-  app.use(express.json({ limit: '3mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(mongoSanitize());
-  app.use(cors());
-  app.use(cookieParser());
-
-  // Bridge cookie → Authorization so Passport's JWT strategy picks it up
+// 1) Per-request summary
+if (MAGIC_DEBUG) {
   app.use((req, _res, next) => {
-    if (!req.headers.authorization) {
+    const cks = Object.keys(req.cookies || {});
+    console.log('[req]', req.method, req.path, 'cookies:', cks);
+    next();
+  });
+}
+
+// 2) Bridge cookie -> Authorization (with logs)
+app.use((req, _res, next) => {
+  if (!req.headers.authorization) {
+    const c = req.cookies || {};
+    const t = c.jwt || c.token || c.accessToken;
+    if (t) {
+      req.headers.authorization = `Bearer ${t}`;
+      if (MAGIC_DEBUG) {
+        console.log('[bridge] set Authorization from cookie; jwt:', red(t));
+      }
+    } else if (MAGIC_DEBUG) {
+      console.log('[bridge] no auth cookie present');
+    }
+  }
+  next();
+});
+
+// 3) Log incoming /api/auth/refresh requests (what cookies we have)
+if (MAGIC_DEBUG) {
+  app.use('/api/auth', (req, _res, next) => {
+    if (req.path.startsWith('/refresh')) {
       const c = req.cookies || {};
-      const t = c.jwt || c.token || c.accessToken;
-      if (t) req.headers.authorization = `Bearer ${t}`;
+      console.log('[refresh] cookies:',
+        Object.fromEntries(
+          Object.entries(c).map(([k, v]) => [k, k === 'refreshToken' || k === 'jwt' ? red(v) : '…'])
+        )
+      );
     }
     next();
   });
-
-  if (!isEnabled(DISABLE_COMPRESSION)) app.use(compression());
-  else console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
-
-  // static assets
-  app.use(staticCache(app.locals.paths.dist));
-  app.use(staticCache(app.locals.paths.fonts));
-  app.use(staticCache(app.locals.paths.assets));
-
-  if (!ALLOW_SOCIAL_LOGIN) {
-    console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
-  }
-
-  // passport
-  app.use(passport.initialize());
-  passport.use(jwtLogin());
-  passport.use(passportLogin());
-
-  if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
-    passport.use(ldapLogin);
-  }
-
-  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    await configureSocialLogins(app);
-  }
-
-  // ---------- routes ----------
-  // Magic link FIRST (before ErrorController/catch-all)
-  app.use('/', magicRoutes);
-
-  app.use('/oauth', routes.oauth);
-  app.use('/api/admin', adminUsers);
-  app.use('/api/auth', routes.auth);
-  app.use('/api/actions', routes.actions);
-  app.use('/api/keys', routes.keys);
-  app.use('/api/user', routes.user);
-  app.use('/api/search', routes.search);
-  app.use('/api/edit', routes.edit);
-  app.use('/api/messages', routes.messages);
-  app.use('/api/convos', routes.convos);
-  app.use('/api/presets', routes.presets);
-  app.use('/api/prompts', routes.prompts);
-  app.use('/api/categories', routes.categories);
-  app.use('/api/tokenizer', routes.tokenizer);
-  app.use('/api/endpoints', routes.endpoints);
-  app.use('/api/balance', routes.balance);
-  app.use('/api/models', routes.models);
-  app.use('/api/plugins', routes.plugins);
-  app.use('/api/config', routes.config);
-  app.use('/api/assistants', routes.assistants);
-  app.use('/api/files', await routes.files.initialize());
-  app.use('/images/', validateImageRequest, routes.staticRoute);
-  app.use('/api/share', routes.share);
-  app.use('/api/roles', routes.roles);
-  app.use('/api/agents', routes.agents);
-  app.use('/api/banner', routes.banner);
-  app.use('/api/memories', routes.memories);
-  app.use('/api/permissions', routes.accessPermissions);
-  app.use('/api/tags', routes.tags);
-  app.use('/api/mcp', routes.mcp);
-
-  app.use(ErrorController);
-
-  // SPA catch-all (last)
-  app.use((_req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
-
-    const lang = res.req.cookies.lang || res.req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = lang.replace(/"/g, '&quot;');
-    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-    res.type('html').send(updatedIndexHtml);
-  });
-
-  app.listen(port, host, () => {
-    const shownHost = host === '0.0.0.0' ? 'localhost' : host;
-    logger.info(`Server listening at http://${shownHost}:${port}`);
-    initializeMCPs(app).then(() => checkMigrations());
-  });
-};
-
-startServer();
-
-// -------- error guard --------
-let messageCount = 0;
-process.on('uncaughtException', (err) => {
-  if (!err.message.includes('fetch failed')) logger.error('There was an uncaught error:', err);
-  if (err.message.includes('abort')) return logger.warn('There was an uncatchable AbortController error.');
-  if (err.message.includes('GoogleGenerativeAI')) {
-    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303');
-  }
-  if (err.message.includes('fetch failed')) {
-    if (messageCount === 0) {
-      logger.warn('Meilisearch error, search will be disabled');
-      messageCount++;
-    }
-    return;
-  }
-  if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.');
-    return;
-  }
-  process.exit(1);
-});
-
-module.exports = app;
+}
