@@ -29,9 +29,16 @@ const routes = require('./routes');
 const adminUsers = require('../routes/admin.users');
 const magicRoutes = require('../routes/magic');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
+const {
+  PORT,
+  HOST,
+  ALLOW_SOCIAL_LOGIN,
+  DISABLE_COMPRESSION,
+  TRUST_PROXY,
+  PUBLIC_URL,
+} = process.env ?? {};
 
-// Heroku needs 0.0.0.0; fall back to that when running on a dyno
+// Heroku binds on 0.0.0.0
 const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
 const trusted_proxy = Number(TRUST_PROXY) || 1;
@@ -55,6 +62,10 @@ const startServer = async () => {
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
+  // inject bootstrap that seeds localStorage.token from appToken cookie (safe no-op if missing)
+  const BOOTSTRAP = `<script>(function(){try{var m=document.cookie.match(/(?:^|;\\s*)appToken=([^;]+)/);if(m){localStorage.setItem('token',m[1]);localStorage.setItem('auth','1');document.cookie='appToken=; Max-Age=0; path=/; SameSite=None; Secure';}}catch(e){}})();</script>`;
+  const indexWithBootstrap = indexHTML.replace('</body>', `${BOOTSTRAP}</body>`);
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
@@ -62,14 +73,21 @@ const startServer = async () => {
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
-  app.use(cors());
   app.use(cookieParser());
 
+  // CORS (allow credentials; origin echo or PUBLIC_URL if set)
+  app.use(
+    cors({
+      origin: PUBLIC_URL || true,
+      credentials: true,
+    }),
+  );
+
   // 🔐 Bridge cookie → Authorization so Passport's JWT strategy sees it
+  // Only trust the HttpOnly 'jwt' cookie (do NOT read legacy 'token'/'accessToken')
   app.use((req, _res, next) => {
     if (!req.headers.authorization) {
-      const c = req.cookies || {};
-      const t = c.jwt || c.token || c.accessToken;
+      const t = req.cookies?.jwt;
       if (t) req.headers.authorization = `Bearer ${t}`;
     }
     next();
@@ -81,7 +99,7 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
-  // Serve static assets with aggressive caching
+  // Static assets (aggressive caching)
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
@@ -90,12 +108,11 @@ const startServer = async () => {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
 
-  /* OAUTH / Passport */
+  /* Passport */
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
 
-  /* LDAP Auth (optional) */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
@@ -104,9 +121,10 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
-  /* API Endpoints */
-  // ✅ Magic link routes BEFORE ErrorController & catch-all
+  /* Routes */
+  // ✅ magic link routes FIRST (before ErrorController and SPA catch-all)
   app.use('/', magicRoutes);
+
   app.use('/oauth', routes.oauth);
   app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
@@ -140,7 +158,7 @@ const startServer = async () => {
 
   app.use(ErrorController);
 
-  // SPA catch-all – keep LAST
+  // SPA catch-all (keep LAST)
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -150,7 +168,7 @@ const startServer = async () => {
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
-    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    const updatedIndexHtml = indexWithBootstrap.replace(/lang="en-US"/g, `lang="${saneLang}"`);
     res.type('html');
     res.send(updatedIndexHtml);
   });
@@ -184,7 +202,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.');
+    logger.error('\n\nAn Uncaught \`OpenAIError\` error may be due to your reverse-proxy setup or stream configuration, or a bug in the \`openai\` node package.');
     return;
   }
   process.exit(1);
