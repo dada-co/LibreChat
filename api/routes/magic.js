@@ -2,7 +2,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt'); // <-- add
+const bcrypt = require('bcryptjs'); // pure JS, no native build
 
 const router = express.Router();
 
