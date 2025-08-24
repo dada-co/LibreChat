@@ -26,9 +26,6 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const adminUsers = require('../routes/admin.users');
-const magicRoutes = require('../routes/magic');
-
 const {
   PORT,
   HOST,
@@ -63,14 +60,13 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  // ---- Middleware ----
+  /* Middleware */
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
   app.use(cookieParser());
 
-  // CORS w/ credentials
   app.use(
     cors({
       origin: PUBLIC_URL || true,
@@ -78,7 +74,7 @@ const startServer = async () => {
     }),
   );
 
-  // Bridge cookie -> Authorization for Passport JWT
+  // Only trust the HttpOnly 'jwt' cookie (not legacy names)
   app.use((req, _res, next) => {
     if (!req.headers.authorization) {
       const t = req.cookies?.jwt;
@@ -96,7 +92,7 @@ const startServer = async () => {
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
 
-  // ---- Auth strategies ----
+  /* Passport */
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
@@ -107,7 +103,25 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
-  // ---- Routes (magic FIRST) ----
+  /* Load custom routes defensively */
+  let magicRoutes = express.Router();
+  let adminUsers = express.Router();
+
+  try {
+    magicRoutes = require(path.join(__dirname, '..', 'routes', 'magic'));
+    logger.info('[routes] loaded /m (magic)');
+  } catch (e) {
+    console.error('[routes] failed to load /m (magic):', e && e.stack ? e.stack : e);
+  }
+
+  try {
+    adminUsers = require(path.join(__dirname, '..', 'routes', 'admin.users'));
+    logger.info('[routes] loaded /api/admin');
+  } catch (e) {
+    console.error('[routes] failed to load /api/admin:', e && e.stack ? e.stack : e);
+  }
+
+  /* Routes (magic FIRST) */
   app.use('/', magicRoutes);
 
   app.use('/oauth', routes.oauth);
@@ -143,7 +157,7 @@ const startServer = async () => {
 
   app.use(ErrorController);
 
-  // SPA catch-all
+  // SPA catch-all – keep LAST
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -174,7 +188,7 @@ process.on('uncaughtException', (err) => {
   }
   if (err.message.includes('abort')) return logger.warn('There was an uncatchable AbortController error.');
   if (err.message.includes('GoogleGenerativeAI')) {
-    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue.');
+    return logger.warn('GoogleGenerativeAI errors cannot be caught due to an upstream issue.');
   }
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
@@ -184,7 +198,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('\n\nAn uncaught OpenAI error may be due to reverse-proxy/stream config or an upstream bug.');
+    logger.error('An uncaught OpenAI error may be due to reverse-proxy/stream config or an upstream bug.');
     return;
   }
   process.exit(1);
