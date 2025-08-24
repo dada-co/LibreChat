@@ -2,6 +2,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt'); // <-- add
 
 const router = express.Router();
 
@@ -9,17 +10,11 @@ const MAGIC_SECRET =
   process.env.MAGIC_LINK_SECRET ||
   process.env.JWT_SECRET;
 
-// Use the exact same precedence the API uses to VERIFY refresh tokens
-const REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET ||
-  process.env.REFRESH_TOKEN_SECRET ||
-  process.env.JWT_SECRET;
-
 // ----- cookie helpers -----
-const ONE_HOUR_MS  = 60 * 60 * 1000;
-const THIRTY_D_MS  = 30 * 24 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const THIRTY_D_MS = 30 * 24 * 60 * 60 * 1000;
 
-// Heroku/Chrome: SameSite=None requires Secure
+// NOTE: Heroku/Chrome require SameSite=None with Secure for cross-site redirects
 const BASE_COOKIE = {
   httpOnly: true,
   sameSite: 'None',
@@ -32,13 +27,28 @@ function setAuthCookies(res, access, refresh) {
   res.cookie('jwt', access,           { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
   res.cookie('refreshToken', refresh, { ...BASE_COOKIE, maxAge: THIRTY_D_MS });
 
-  // extra names for wider compat with some builds
+  // extra names for wider compat with some middlewares
   res.cookie('token', access,         { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
   res.cookie('accessToken', access,   { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
 }
 
+// Persist a hashed copy of the refresh token so /api/auth/refresh will accept it
+async function storeRefreshToken(userId, rawRefresh) {
+  try {
+    const User = mongoose.model('User');
+    const hashed = await bcrypt.hash(rawRefresh, 10);
+    // avoid unbounded growth (optional): keep last 5
+    await User.updateOne(
+      { _id: userId },
+      { $push: { refreshToken: { $each: [hashed], $slice: -5 } } }
+    );
+  } catch (e) {
+    console.error('[magic] failed to store refresh token', e);
+  }
+}
+
 // -----------------------------------------------------------------------------
-// 1) Handshake page: writes localStorage and verifies session
+// 1) Handshake/finisher page (define BEFORE the token route)
 // -----------------------------------------------------------------------------
 router.get('/m/signed', (req, res) => {
   const jwtCookie = req.cookies?.jwt || '';
@@ -50,7 +60,12 @@ router.get('/m/signed', (req, res) => {
   } catch (_) {}
 
   res.type('html').send(`<!doctype html>
-<html><head><meta charset="utf-8"/><title>Signing you in…</title><meta name="robots" content="noindex"/></head>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Signing you in…</title>
+  <meta name="robots" content="noindex" />
+</head>
 <body style="font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;">
   <div>Signing you in…</div>
   <script>
@@ -71,11 +86,12 @@ router.get('/m/signed', (req, res) => {
     }
   })();
   </script>
-</body></html>`);
+</body>
+</html>`);
 });
 
 // -----------------------------------------------------------------------------
-// 2) Magic link consumer: verify, set cookies, bounce to /m/signed
+// 2) Token consumer: verifies magic link, sets cookies, redirects to /m/signed
 // -----------------------------------------------------------------------------
 router.get('/m/:token', async (req, res) => {
   try {
@@ -88,7 +104,7 @@ router.get('/m/:token', async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).send('User not found');
 
-    // access token
+    // Sign access token with claims LibreChat expects
     const access = jwt.sign(
       {
         sub: userId,
@@ -104,14 +120,22 @@ router.get('/m/:token', async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
     );
 
-    // refresh token (signed with the same secret the server will VERIFY)
+    // Sign refresh token with your refresh secret(s)
     const refresh = jwt.sign(
       { sub: userId },
-      REFRESH_SECRET,
+      process.env.REFRESH_TOKEN_SECRET ||
+        process.env.JWT_REFRESH_SECRET ||
+        process.env.JWT_SECRET,
       { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '30d' }
     );
 
+    // 🔑 Store hashed refresh in DB so /api/auth/refresh will accept it
+    await storeRefreshToken(userId, refresh);
+
+    // Set cookies
     setAuthCookies(res, access, refresh);
+
+    // Finish on the handshake page (writes localStorage + verifies /api/user)
     return res.redirect('/m/signed');
   } catch (e) {
     return res.status(401).send('Invalid or expired link');
