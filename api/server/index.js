@@ -26,15 +26,12 @@ const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
-const {
-  PORT,
-  HOST,
-  ALLOW_SOCIAL_LOGIN,
-  DISABLE_COMPRESSION,
-  TRUST_PROXY,
-  PUBLIC_URL,
-} = process.env ?? {};
+const adminUsers = require('../routes/admin.users');
+const magicRoutes = require('../routes/magic');
 
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
+
+// Heroku: bind on 0.0.0.0
 const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
 const trusted_proxy = Number(TRUST_PROXY) || 1;
@@ -60,68 +57,51 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  /* Middleware */
+  // ---------- middleware ----------
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
+  app.use(cors());
   app.use(cookieParser());
 
-  app.use(
-    cors({
-      origin: PUBLIC_URL || true,
-      credentials: true,
-    }),
-  );
-
-  // Only trust the HttpOnly 'jwt' cookie (not legacy names)
+  // Bridge cookie → Authorization so Passport's JWT strategy picks it up
   app.use((req, _res, next) => {
     if (!req.headers.authorization) {
-      const t = req.cookies?.jwt;
+      const c = req.cookies || {};
+      const t = c.jwt || c.token || c.accessToken;
       if (t) req.headers.authorization = `Bearer ${t}`;
     }
     next();
   });
 
-  if (!isEnabled(DISABLE_COMPRESSION)) {
-    app.use(compression());
-  }
+  if (!isEnabled(DISABLE_COMPRESSION)) app.use(compression());
+  else console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
 
-  // Static assets
+  // static assets
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
 
-  /* Passport */
+  if (!ALLOW_SOCIAL_LOGIN) {
+    console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
+  }
+
+  // passport
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
+
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
+
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
 
-  /* Load custom routes defensively */
-  let magicRoutes = express.Router();
-  let adminUsers = express.Router();
-
-  try {
-    magicRoutes = require(path.join(__dirname, '..', 'routes', 'magic'));
-    logger.info('[routes] loaded /m (magic)');
-  } catch (e) {
-    console.error('[routes] failed to load /m (magic):', e && e.stack ? e.stack : e);
-  }
-
-  try {
-    adminUsers = require(path.join(__dirname, '..', 'routes', 'admin.users'));
-    logger.info('[routes] loaded /api/admin');
-  } catch (e) {
-    console.error('[routes] failed to load /api/admin:', e && e.stack ? e.stack : e);
-  }
-
-  /* Routes (magic FIRST) */
+  // ---------- routes ----------
+  // Magic link FIRST (before ErrorController/catch-all)
   app.use('/', magicRoutes);
 
   app.use('/oauth', routes.oauth);
@@ -157,38 +137,36 @@ const startServer = async () => {
 
   app.use(ErrorController);
 
-  // SPA catch-all – keep LAST
-  app.use((req, res) => {
+  // SPA catch-all (last)
+  app.use((_req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
       Pragma: process.env.INDEX_PRAGMA || 'no-cache',
       Expires: process.env.INDEX_EXPIRES || '0',
     });
 
-    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const lang = res.req.cookies.lang || res.req.headers['accept-language']?.split(',')[0] || 'en-US';
     const saneLang = lang.replace(/"/g, '&quot;');
     const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-    res.type('html');
-    res.send(updatedIndexHtml);
+    res.type('html').send(updatedIndexHtml);
   });
 
   app.listen(port, host, () => {
-    const where = host === '0.0.0.0' ? `http://localhost:${port}` : `http://${host}:${port}`;
-    logger.info(`Server listening at ${where}`);
+    const shownHost = host === '0.0.0.0' ? 'localhost' : host;
+    logger.info(`Server listening at http://${shownHost}:${port}`);
     initializeMCPs(app).then(() => checkMigrations());
   });
 };
 
 startServer();
 
+// -------- error guard --------
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
-  if (!err.message.includes('fetch failed')) {
-    logger.error('There was an uncaught error:', err);
-  }
+  if (!err.message.includes('fetch failed')) logger.error('There was an uncaught error:', err);
   if (err.message.includes('abort')) return logger.warn('There was an uncatchable AbortController error.');
   if (err.message.includes('GoogleGenerativeAI')) {
-    return logger.warn('GoogleGenerativeAI errors cannot be caught due to an upstream issue.');
+    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303');
   }
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
@@ -198,7 +176,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('An uncaught OpenAI error may be due to reverse-proxy/stream config or an upstream bug.');
+    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.');
     return;
   }
   process.exit(1);
