@@ -1,231 +1,254 @@
 // api/server/index.js
+'use strict';
+
+/**
+ * Minimal, safe Express server with:
+ *  - Cookie→Authorization bridge
+ *  - /api/auth/refresh override (must be registered before other routers)
+ *  - Static assets + SPA fallback
+ *  - Clean logging and error handling for Node 22.x
+ */
+
 require('dotenv').config();
-const fs = require('fs');
+
 const path = require('path');
-require('module-alias')({ base: path.resolve(__dirname, '..') });
-
-const cors = require('cors');
-const axios = require('axios');
 const express = require('express');
-const passport = require('passport');
-const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const mongoSanitize = require('express-mongo-sanitize');
+const compression = require('compression');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
 
-const { logger } = require('@librechat/data-schemas');
-const { isEnabled, ErrorController } = require('@librechat/api');
-const { connectDb, indexSync } = require('~/db');
-
-const validateImageRequest = require('./middleware/validateImageRequest');
-const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
-const { checkMigrations } = require('./services/start/migration');
-const initializeMCPs = require('./services/initializeMCPs');
-const configureSocialLogins = require('./socialLogins');
-const AppService = require('./services/AppService');
-const staticCache = require('./utils/staticCache');
-const noIndex = require('./middleware/noIndex');
-const routes = require('./routes');
-
-const adminUsers = require('../routes/admin.users');
-const magicRoutes = require('../routes/magic');
-
-const {
-  PORT,
-  HOST,
-  ALLOW_SOCIAL_LOGIN,
-  DISABLE_COMPRESSION,
-  TRUST_PROXY,
-} = process.env ?? {};
-
-// Heroku needs 0.0.0.0; fall back to that when running on a dyno
-const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
-const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
-const trusted_proxy = Number(TRUST_PROXY) || 1;
+// ⬇️ If your routes live elsewhere, update these paths accordingly.
+const magicRoutes = require('./routes/magic'); // e.g., api/server/routes/magic.js
+const routes = require('./routes');            // e.g., api/server/routes/index.js (exports { auth, api, ... })
 
 const app = express();
 
-const startServer = async () => {
-  if (typeof Bun !== 'undefined') {
-    axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
-  }
+/* --------------------------- basic app config --------------------------- */
 
-  /* --- DB --- */
-  await connectDb();
-  logger.info('Connected to MongoDB');
-  indexSync().catch((err) => logger.error('[indexSync] Background sync failed:', err));
+const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-  /* --- Core app setup --- */
-  app.disable('x-powered-by');
-  app.set('trust proxy', trusted_proxy);
+// Allow frontend origin if set; otherwise, default to permissive in dev
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || undefined;
 
-  // AppService sets up paths (dist/assets/etc.) in app.locals
-  await AppService(app);
+app.set('trust proxy', 1);
 
-  const indexPath = path.join(app.locals.paths.dist, 'index.html');
-  const indexHTML = fs.readFileSync(indexPath, 'utf8');
+app.use(compression());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
-  app.get('/health', (_req, res) => res.status(200).send('OK'));
+app.use(
+  cors({
+    origin: FRONTEND_ORIGIN ? [FRONTEND_ORIGIN] : true,
+    credentials: true,
+  })
+);
 
-  /* --- Middleware --- */
-  app.use(noIndex);
-  app.use(express.json({ limit: '3mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '3mb' }));
-  app.use(mongoSanitize());
-  app.use(cors());
-  app.use(cookieParser());
+/* ------------------------------ tiny logger ---------------------------- */
 
-  // Simple request logger (useful while debugging magic link flow)
-  app.use((req, _res, next) => {
-    try {
-      const keys = Object.keys(req.cookies || {});
-      logger.info(`[req] ${req.method} ${req.path} cookies: ${JSON.stringify(keys)}`);
-    } catch {}
-    next();
-  });
-
-  // 🔐 Bridge cookie → Authorization so Passport's JWT strategy sees it
-  //    Skip endpoints that do their own token processing.
-  const SKIP_BRIDGE = new Set(['/api/auth/refresh', '/api/auth/logout']);
-  app.use((req, _res, next) => {
-    if (SKIP_BRIDGE.has(req.path)) {
-      logger.info(`[bridge] SKIP on ${req.path}`);
-      return next();
-    }
-    if (!req.headers.authorization) {
-      const c = req.cookies || {};
-      const t = c.jwt || c.token || c.accessToken;
-      if (t) {
-        req.headers.authorization = `Bearer ${t}`;
-        logger.info(`[bridge] Authorization set from cookie; jwt: ${t.slice(0, 7)}...${t.slice(-7)}`);
-      } else {
-        logger.info('[bridge] no auth cookie present');
-      }
-    }
-    next();
-  });
-
-  if (!isEnabled(DISABLE_COMPRESSION)) {
-    app.use(compression());
-  } else {
-    console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
-  }
-
-  // Serve static assets with aggressive caching
-  app.use(staticCache(app.locals.paths.dist));
-  app.use(staticCache(app.locals.paths.fonts));
-  app.use(staticCache(app.locals.paths.assets));
-
-  if (!ALLOW_SOCIAL_LOGIN) {
-    console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
-  }
-
-  /* --- Passport / Auth strategies --- */
-  app.use(passport.initialize());
-  passport.use(jwtLogin());
-  passport.use(passportLogin());
-
-  /* Optional LDAP */
-  if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
-    passport.use(ldapLogin);
-  }
-
-  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
-    await configureSocialLogins(app);
-  }
-
-  /* --- Routes --- */
-  // ✅ Magic link routes BEFORE error controller & SPA catch-all
-  app.use('/', magicRoutes);
-
-  // Regular API routes
-  app.use('/oauth', routes.oauth);
-  app.use('/api/admin', adminUsers);
-  app.use('/api/auth', routes.auth);
-  app.use('/api/actions', routes.actions);
-  app.use('/api/keys', routes.keys);
-  app.use('/api/user', routes.user);
-  app.use('/api/search', routes.search);
-  app.use('/api/edit', routes.edit);
-  app.use('/api/messages', routes.messages);
-  app.use('/api/convos', routes.convos);
-  app.use('/api/presets', routes.presets);
-  app.use('/api/prompts', routes.prompts);
-  app.use('/api/categories', routes.categories);
-  app.use('/api/tokenizer', routes.tokenizer);
-  app.use('/api/endpoints', routes.endpoints);
-  app.use('/api/balance', routes.balance);
-  app.use('/api/models', routes.models);
-  app.use('/api/plugins', routes.plugins);
-  app.use('/api/config', routes.config);
-  app.use('/api/assistants', routes.assistants);
-  app.use('/api/files', await routes.files.initialize());
-  app.use('/images/', validateImageRequest, routes.staticRoute);
-  app.use('/api/share', routes.share);
-  app.use('/api/roles', routes.roles);
-  app.use('/api/agents', routes.agents);
-  app.use('/api/banner', routes.banner);
-  app.use('/api/memories', routes.memories);
-  app.use('/api/permissions', routes.accessPermissions);
-  app.use('/api/tags', routes.tags);
-  app.use('/api/mcp', routes.mcp);
-
-  // Centralized error handler
-  app.use(ErrorController);
-
-  // SPA catch-all – keep LAST
-  app.use((req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
-
-    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = String(lang).replace(/"/g, '&quot;');
-    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-    res.type('html').send(updatedIndexHtml);
-  });
-
-  /* --- Start server --- */
-  app.listen(port, host, () => {
-    if (host === '0.0.0.0') {
-      logger.info(`Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`);
-    } else {
-      logger.info(`Server listening at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
-    }
-    // Fire and forget
-    initializeMCPs(app).then(() => checkMigrations());
-  });
+const color = {
+  green: (s) => `\x1b[32m${s}\x1b[39m`,
+  yellow: (s) => `\x1b[33m${s}\x1b[39m`,
+  red: (s) => `\x1b[31m${s}\x1b[39m`,
+  gray: (s) => `\x1b[90m${s}\x1b[39m`,
+};
+const logger = {
+  info: (...a) => console.log(new Date().toISOString(), color.green('info'), ':', ...a),
+  warn: (...a) => console.warn(new Date().toISOString(), color.yellow('warn'), ':', ...a),
+  error: (...a) => console.error(new Date().toISOString(), color.red('error'), ':', ...a),
 };
 
-startServer();
-
-/* --- Global error guard --- */
-let messageCount = 0;
-process.on('uncaughtException', (err) => {
-  if (!err.message.includes('fetch failed')) {
-    logger.error('There was an uncaught error:', err);
-  }
-  if (err.message.includes('abort')) {
-    logger.warn('There was an uncatchable AbortController error.');
-    return;
-  }
-  if (err.message.includes('GoogleGenerativeAI')) {
-    logger.warn('GoogleGenerativeAI errors cannot be caught due to an upstream issue. See: github.com/google-gemini/generative-ai-js/issues/303');
-    return;
-  }
-  if (err.message.includes('fetch failed')) {
-    if (messageCount === 0) {
-      logger.warn('Meilisearch error, search will be disabled');
-      messageCount++;
-    }
-    return;
-  }
-  if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('Uncaught OpenAI-related error. This may be due to reverse-proxy setup or stream configuration.');
-    return;
-  }
-  process.exit(1);
+// Request log (method, path, cookies present)
+app.use((req, _res, next) => {
+  const cookieKeys = Object.keys(req.cookies || {});
+  logger.info(`[req] ${req.method} ${req.path} cookies: ${JSON.stringify(cookieKeys)}`);
+  next();
 });
 
-module.exports = app;
+/* --------------------- cookie -> Authorization bridge ------------------- */
+
+const SKIP_BRIDGE = new Set(['/api/auth/refresh', '/api/auth/logout']);
+app.use((req, _res, next) => {
+  if (SKIP_BRIDGE.has(req.path)) {
+    logger.info(`[bridge] SKIP on ${req.path}`);
+    return next();
+  }
+  if (!req.headers.authorization) {
+    const c = req.cookies || {};
+    const t = c.jwt || c.token || c.accessToken;
+    if (t) {
+      req.headers.authorization = `Bearer ${t}`;
+      const left = t.slice(0, 7);
+      const right = t.slice(-7);
+      logger.info(`[bridge] Authorization set from cookie; jwt: ${left}...${right}`);
+    }
+  } else {
+    logger.info('[bridge] Authorization already present');
+  }
+  next();
+});
+
+/* ------------------------- helper: cookie setter ------------------------ */
+
+function setAccessCookies(res, accessToken) {
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const BASE = {
+    httpOnly: true,
+    sameSite: 'None',
+    secure: true,
+    path: '/',
+    maxAge: ONE_HOUR_MS,
+  };
+  res.cookie('jwt', accessToken, BASE);
+  res.cookie('token', accessToken, BASE);
+  res.cookie('accessToken', accessToken, BASE);
+}
+
+/* -------------------- /api/auth/refresh OVERRIDE (early) ---------------- */
+
+/**
+ * IMPORTANT:
+ * This must be defined BEFORE any other auth/magic routers,
+ * otherwise a previously-registered handler may redirect with 302.
+ */
+app.post('/api/auth/refresh', async (req, res) => {
+  logger.info('[refresh] override hit');
+  try {
+    const { refreshToken } = req.cookies || {};
+    if (!refreshToken) {
+      logger.warn('[refresh] missing refresh cookie');
+      return res.status(401).json({ error: 'missing_refresh_cookie' });
+    }
+
+    const refreshSecret =
+      process.env.REFRESH_TOKEN_SECRET ||
+      process.env.JWT_REFRESH_SECRET ||
+      process.env.JWT_SECRET;
+
+    if (!refreshSecret) {
+      logger.error('[refresh] no refresh secret configured');
+      return res.status(500).json({ error: 'server_misconfigured' });
+    }
+
+    // Verify refresh token
+    const payload = jwt.verify(refreshToken, refreshSecret);
+    const userId = payload.sub || payload.id || payload._id;
+    if (!userId) {
+      logger.warn('[refresh] refresh token missing subject');
+      return res.status(401).json({ error: 'invalid_refresh' });
+    }
+
+    // Fetch user. If you use Mongoose, ensure the model is already registered elsewhere.
+    // Require inline to avoid hard dependency in environments without mongoose.
+    let user = null;
+    try {
+      const mongoose = require('mongoose');
+      if (mongoose?.models?.User) {
+        user = await mongoose.models.User.findById(userId).lean();
+      }
+    } catch {
+      // ignore if mongoose isn't installed / used
+    }
+
+    // If no DB lookup is needed in your setup, you could skip the query. For safety:
+    if (!user && process.env.REFRESH_ALLOW_MISSING_USER !== 'true') {
+      logger.warn('[refresh] user not found for sub:', userId);
+      return res.status(404).json({ error: 'user_not_found' });
+    }
+
+    const accessClaims = {
+      sub: userId,
+      id: userId,
+      _id: userId,
+      email: user?.email || '',
+      name: user?.name || '',
+      role: user?.role || 'user',
+      roles: [user?.role || 'user'],
+      provider: 'magic',
+    };
+
+    const accessToken = jwt.sign(
+      accessClaims,
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+    );
+
+    setAccessCookies(res, accessToken);
+    logger.info('[refresh] issued new access token');
+    return res.status(200).json({ token: accessToken, ok: true });
+  } catch (e) {
+    logger.warn('[refresh] failed:', e?.message || String(e));
+    return res.status(401).json({ error: 'invalid_refresh' });
+  }
+});
+
+/* ----------------------------- other routers ---------------------------- */
+
+// Mount magic routes (e.g. /m/:token -> signs cookies and redirects)
+app.use('/', magicRoutes);
+
+// Mount the rest of your API routers (expects routes.auth, routes.api, etc.)
+if (routes?.auth) app.use('/api/auth', routes.auth);
+if (routes?.api) app.use('/api', routes.api);
+
+/* ------------------------------ static files ---------------------------- */
+
+/**
+ * Serve your built frontend. Update STATIC_DIR if your build output is different.
+ * Example common locations: ../../web/dist, ../../client/dist, ../../public
+ */
+const STATIC_DIR =
+  process.env.STATIC_DIR ||
+  path.resolve(process.cwd(), 'public');
+
+app.use(express.static(STATIC_DIR, { index: false, maxAge: NODE_ENV === 'production' ? '1y' : 0 }));
+
+// Service worker (often needs to be served at the root)
+app.get('/sw.js', (req, res) => {
+  const swPath = path.join(STATIC_DIR, 'sw.js');
+  logger.info('[req] GET /sw.js');
+  res.sendFile(swPath, (err) => {
+    if (err) {
+      logger.warn('sw.js not found at', swPath);
+      res.status(404).end();
+    }
+  });
+});
+
+// SPA fallback: let the client-side router handle everything else
+app.get('*', (req, res, next) => {
+  // If request looks like API, skip to 404/next handlers
+  if (req.path.startsWith('/api/')) return next();
+
+  const indexPath = path.join(STATIC_DIR, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) next(err);
+  });
+});
+
+/* ----------------------------- error handler ---------------------------- */
+
+app.use((err, _req, res, _next) => {
+  logger.error('Unhandled error:', err?.message || err);
+  res.status(500).json({ error: 'internal_error' });
+});
+
+/* ------------------------------- start up ------------------------------- */
+
+const server = app.listen(PORT, () => {
+  logger.info(`Server listening on :${PORT}`);
+});
+
+/* ------------------------------- process hooks -------------------------- */
+
+process.on('uncaughtException', (err) => {
+  logger.error('uncaughtException:', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('unhandledRejection:', reason?.message || String(reason));
+});
+
+module.exports = { app, server };
