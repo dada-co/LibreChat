@@ -51,7 +51,7 @@ router.get('/m/signed', (req, res) => {
 
   res.set('Cache-Control', 'no-store');
 
-  // IMPORTANT: write the token as a *plain string* (no JSON.stringify)
+  // IMPORTANT: write the token as a *plain string*
   res.type('html').send(`<!doctype html>
 <html>
 <head>
@@ -67,29 +67,21 @@ router.get('/m/signed', (req, res) => {
     const userId = ${JSON.stringify(uid || '')};
 
     try {
-      // Write in multiple places some builds check
       if (token) {
-        localStorage.setItem('token', token);          // primary
-        localStorage.setItem('accessToken', token);    // alias some guards read
-        localStorage.setItem('jwt', token);            // just in case
+        localStorage.setItem('token', token);
+        localStorage.setItem('accessToken', token);
+        localStorage.setItem('jwt', token);
         localStorage.setItem('loggedIn', '1');
         if (userId) localStorage.setItem('userId', userId);
-
-        // Optional “auth” blob a few UIs look for
-        try {
-          localStorage.setItem('auth', JSON.stringify({ token, userId }));
-        } catch {}
+        try { localStorage.setItem('auth', JSON.stringify({ token, userId })); } catch {}
       }
-    } catch (e) {
-      // ignore storage errors
-    }
+    } catch {}
 
     try {
-      // Verify the server sees our session via cookies
-      const r = await fetch('/api/user', { credentials: 'include' });
-      if (!r.ok) throw new Error('unauthorized');
+      // Bust cache and accept 200 or 304
+      const r = await fetch('/api/user?fresh=' + Date.now(), { credentials: 'include', cache: 'no-store' });
+      if (r.status !== 200 && r.status !== 304) throw new Error('unauthorized:' + r.status);
     } catch (e) {
-      // if verification fails, go to login with reason
       location.replace('/login?from=magic&err=' + encodeURIComponent(e.message || 'unknown'));
       return;
     }
@@ -158,11 +150,10 @@ router.get('/m/:token', async (req, res) => {
       refresh: refresh.slice(0, 30) + '…' + refresh.slice(-6),
     });
 
-    // OPTIONAL: keep refresh hashes in DB if your build uses it (safe no-op if not)
+    // OPTIONAL: persist refresh hashes if your schema has it
     try {
-      const bcrypt = require('bcryptjs'); // use bcryptjs to avoid native build
+      const bcrypt = require('bcryptjs');
       const hash = await bcrypt.hash(refresh, 10);
-      // only store limited history
       const max = 5;
       const list = Array.isArray(user.refreshToken) ? user.refreshToken : [];
       const trimmed = (list.concat(hash)).slice(-max);
@@ -174,7 +165,7 @@ router.get('/m/:token', async (req, res) => {
         listLenAfter: trimmed.length,
         hash: hash.slice(0, 12) + '…',
       });
-    } catch { /* ignore if model lacks field */ }
+    } catch {}
 
     setAuthCookies(res, access, refresh);
     console.log('[magic] set cookies', { cookieNames: ['jwt','token','accessToken','refreshToken'], sameSite: 'None', secure: true });
