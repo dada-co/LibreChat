@@ -23,7 +23,7 @@ const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
-import adminUsers from '../routes/admin.users';
+const adminUsers = require('../routes/admin.users');
   
 // Allow PORT=0 to be used for automatic free port assignment
 const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
