@@ -1,6 +1,5 @@
 // api/server/index.js
 require('dotenv').config();
-
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -30,9 +29,15 @@ const routes = require('./routes');
 const adminUsers = require('../routes/admin.users');
 const magicRoutes = require('../routes/magic');
 
-const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
+const {
+  PORT,
+  HOST,
+  ALLOW_SOCIAL_LOGIN,
+  DISABLE_COMPRESSION,
+  TRUST_PROXY,
+} = process.env ?? {};
 
-// Heroku: bind to 0.0.0.0
+// Heroku needs 0.0.0.0; fall back to that when running on a dyno
 const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
 const trusted_proxy = Number(TRUST_PROXY) || 1;
@@ -44,23 +49,24 @@ const startServer = async () => {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
 
+  /* --- DB --- */
   await connectDb();
   logger.info('Connected to MongoDB');
   indexSync().catch((err) => logger.error('[indexSync] Background sync failed:', err));
 
+  /* --- Core app setup --- */
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
-  // Build app.locals.paths, env config, etc.
+  // AppService sets up paths (dist/assets/etc.) in app.locals
   await AppService(app);
 
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
-  // Health
   app.get('/health', (_req, res) => res.status(200).send('OK'));
 
-  /* Base Middleware */
+  /* --- Middleware --- */
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
@@ -68,21 +74,29 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
 
-  // Log each request + what cookies arrived (helps debug login loops)
+  // Simple request logger (useful while debugging magic link flow)
   app.use((req, _res, next) => {
-    const cookies = Object.keys(req.cookies || {});
-    logger.info(`[req] ${req.method} ${req.path} cookies: ${JSON.stringify(cookies)}`);
+    try {
+      const keys = Object.keys(req.cookies || {});
+      logger.info(`[req] ${req.method} ${req.path} cookies: ${JSON.stringify(keys)}`);
+    } catch {}
     next();
   });
 
-  // Bridge cookie → Authorization so Passport's JWT strategy sees it
+  // 🔐 Bridge cookie → Authorization so Passport's JWT strategy sees it
+  //    Skip endpoints that do their own token processing.
+  const SKIP_BRIDGE = new Set(['/api/auth/refresh', '/api/auth/logout']);
   app.use((req, _res, next) => {
+    if (SKIP_BRIDGE.has(req.path)) {
+      logger.info(`[bridge] SKIP on ${req.path}`);
+      return next();
+    }
     if (!req.headers.authorization) {
       const c = req.cookies || {};
       const t = c.jwt || c.token || c.accessToken;
       if (t) {
         req.headers.authorization = `Bearer ${t}`;
-        logger.info(`[bridge] Authorization set from cookie; jwt: ${t.slice(0, 7)}…${t.slice(-7)}`);
+        logger.info(`[bridge] Authorization set from cookie; jwt: ${t.slice(0, 7)}...${t.slice(-7)}`);
       } else {
         logger.info('[bridge] no auth cookie present');
       }
@@ -90,20 +104,13 @@ const startServer = async () => {
     next();
   });
 
-  // Optional compression
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
   } else {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
-  // Make /api responses uncachable by default to avoid SW/304 confusion
-  app.use('/api', (_req, res, next) => {
-    res.set('Cache-Control', 'no-store');
-    next();
-  });
-
-  // Static assets w/ caching
+  // Serve static assets with aggressive caching
   app.use(staticCache(app.locals.paths.dist));
   app.use(staticCache(app.locals.paths.fonts));
   app.use(staticCache(app.locals.paths.assets));
@@ -112,11 +119,12 @@ const startServer = async () => {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
 
-  /* Passport strategies */
+  /* --- Passport / Auth strategies --- */
   app.use(passport.initialize());
   passport.use(jwtLogin());
   passport.use(passportLogin());
 
+  /* Optional LDAP */
   if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
     passport.use(ldapLogin);
   }
@@ -125,10 +133,11 @@ const startServer = async () => {
     await configureSocialLogins(app);
   }
 
-  /* Routes */
-  // Magic routes should come before ErrorController and the SPA catch-all
+  /* --- Routes --- */
+  // ✅ Magic link routes BEFORE error controller & SPA catch-all
   app.use('/', magicRoutes);
 
+  // Regular API routes
   app.use('/oauth', routes.oauth);
   app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
@@ -160,10 +169,10 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
 
-  // Error handler
+  // Centralized error handler
   app.use(ErrorController);
 
-  // SPA catch-all (keep LAST)
+  // SPA catch-all – keep LAST
   app.use((req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -172,24 +181,26 @@ const startServer = async () => {
     });
 
     const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = lang.replace(/"/g, '&quot;');
+    const saneLang = String(lang).replace(/"/g, '&quot;');
     const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
     res.type('html').send(updatedIndexHtml);
   });
 
+  /* --- Start server --- */
   app.listen(port, host, () => {
     if (host === '0.0.0.0') {
       logger.info(`Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`);
     } else {
       logger.info(`Server listening at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     }
+    // Fire and forget
     initializeMCPs(app).then(() => checkMigrations());
   });
 };
 
 startServer();
 
-/** crash guard */
+/* --- Global error guard --- */
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
@@ -200,7 +211,8 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('GoogleGenerativeAI')) {
-    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303');
+    logger.warn('GoogleGenerativeAI errors cannot be caught due to an upstream issue. See: github.com/google-gemini/generative-ai-js/issues/303');
+    return;
   }
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
@@ -210,7 +222,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.');
+    logger.error('Uncaught OpenAI-related error. This may be due to reverse-proxy setup or stream configuration.');
     return;
   }
   process.exit(1);
