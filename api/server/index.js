@@ -4,6 +4,7 @@
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
@@ -49,9 +50,7 @@ app.use((req, _res, next) => {
 /* --------------------- cookie -> Authorization bridge ------------------- */
 const SKIP_BRIDGE = new Set(['/api/auth/refresh', '/api/auth/logout']);
 app.use((req, _res, next) => {
-  if (SKIP_BRIDGE.has(req.path)) {
-    return next();
-  }
+  if (SKIP_BRIDGE.has(req.path)) return next();
   if (!req.headers.authorization) {
     const c = req.cookies || {};
     const t = c.jwt || c.token || c.accessToken;
@@ -119,72 +118,12 @@ app.post('/api/auth/refresh', async (req, res) => {
   }
 });
 
-/* --------------------------- inline "magic" routes ---------------------- */
-// Accepts a magic-link JWT, issues access+refresh cookies, and redirects to /m/signed
-app.get('/m/:token', (req, res) => {
-  const raw = req.params.token;
-  logger.info('[magic] GET /m/:token hit param token');
-  try {
-    const magicSecret = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
-    if (!magicSecret) {
-      logger.error('[magic] no MAGIC_LINK_SECRET/JWT_SECRET');
-      return res.status(500).send('server_misconfigured');
-    }
-    const magic = jwt.verify(raw, magicSecret);
-    logger.info('[magic] token verified', {
-      aud: magic.aud,
-      sub: magic.sub,
-      iat: magic.iat,
-      exp: magic.exp,
-    });
+/* --------------------------- simple health check ------------------------ */
+app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
 
-    const userId = magic.sub || magic.id || magic._id || 'user';
-    const accessClaims = {
-      sub: userId,
-      id: userId,
-      _id: userId,
-      email: magic.email || 'demo1@no-mail.invalid',
-      role: 'user',
-      provider: 'magic',
-    };
-
-    if (!process.env.JWT_SECRET) {
-      logger.error('[magic] JWT_SECRET missing');
-      return res.status(500).send('server_misconfigured');
-    }
-
-    const access = jwt.sign(accessClaims, process.env.JWT_SECRET, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '1h',
-    });
-
-    const refreshSecret =
-      process.env.REFRESH_TOKEN_SECRET ||
-      process.env.JWT_REFRESH_SECRET ||
-      process.env.JWT_SECRET;
-
-    const refresh = jwt.sign(
-      { sub: userId, email: accessClaims.email, role: accessClaims.role },
-      refreshSecret,
-      { expiresIn: process.env.REFRESH_EXPIRES_IN || '30d' }
-    );
-
-    logger.info('[magic] signed tokens { access: ****, refresh: **** }');
-    setRefreshCookie(res, refresh);
-    setAccessCookies(res, access);
-    logger.info('[magic] set cookies { cookieNames: ["jwt","token","accessToken","refreshToken"], sameSite: "None", secure: true }');
-
-    return res.redirect(302, '/m/signed');
-  } catch (e) {
-    logger.warn('[magic] invalid token:', e?.message || String(e));
-    return res.status(401).send('invalid_token');
-  }
-});
-
-app.get('/m/signed', (_req, res) => {
-  res
-    .status(200)
-    .send('<!doctype html><meta charset="utf-8"><title>Signed</title><h1>Signed in ✔</h1>');
-});
+/* ------------------------------- favicon -------------------------------- */
+// Avoid 500s if your app doesn’t have /public/favicon.ico
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
 /* -------------------------- minimal API fallbacks ----------------------- */
 app.get('/api/user', (req, res) => {
@@ -215,6 +154,82 @@ app.get('/api/config', (_req, res) => {
 });
 app.get('/api/banner', (_req, res) => res.status(200).send(''));
 
+/* --------------------------- magic-link routes -------------------------- */
+/** IMPORTANT: define /m/signed BEFORE /m/:token, and restrict :token with a JWT-like regex. */
+
+// Shown after successful magic sign-in
+app.get('/m/signed', (_req, res) => {
+  res
+    .status(200)
+    .send('<!doctype html><meta charset="utf-8"><title>Signed</title><h1>Signed in ✔</h1>');
+});
+
+// Accepts a magic-link JWT, issues access+refresh cookies, and redirects to /m/signed
+app.get(
+  // three base64url segments separated by dots
+  '/m/:token([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)',
+  (req, res) => {
+    const raw = req.params.token;
+    logger.info('[magic] GET /m/:token hit param token');
+    try {
+      const magicSecret = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
+      if (!magicSecret) {
+        logger.error('[magic] no MAGIC_LINK_SECRET/JWT_SECRET');
+        return res.status(500).send('server_misconfigured');
+      }
+      const magic = jwt.verify(raw, magicSecret);
+      logger.info('[magic] token verified', {
+        aud: magic.aud,
+        sub: magic.sub,
+        iat: magic.iat,
+        exp: magic.exp,
+      });
+
+      const userId = magic.sub || magic.id || magic._id || 'user';
+      const accessClaims = {
+        sub: userId,
+        id: userId,
+        _id: userId,
+        email: magic.email || 'demo1@no-mail.invalid',
+        role: 'user',
+        provider: 'magic',
+      };
+
+      if (!process.env.JWT_SECRET) {
+        logger.error('[magic] JWT_SECRET missing');
+        return res.status(500).send('server_misconfigured');
+      }
+
+      const access = jwt.sign(accessClaims, process.env.JWT_SECRET, {
+        expiresIn: process.env.JWT_EXPIRES_IN || '1h',
+      });
+
+      const refreshSecret =
+        process.env.REFRESH_TOKEN_SECRET ||
+        process.env.JWT_REFRESH_SECRET ||
+        process.env.JWT_SECRET;
+
+      const refresh = jwt.sign(
+        { sub: userId, email: accessClaims.email, role: accessClaims.role },
+        refreshSecret,
+        { expiresIn: process.env.REFRESH_EXPIRES_IN || '30d' }
+      );
+
+      logger.info('[magic] signed tokens { access: ****, refresh: **** }');
+      setRefreshCookie(res, refresh);
+      setAccessCookies(res, access);
+      logger.info(
+        '[magic] set cookies { cookieNames: ["jwt","token","accessToken","refreshToken"], sameSite: "None", secure: true }'
+      );
+
+      return res.redirect(302, '/m/signed');
+    } catch (e) {
+      logger.warn('[magic] invalid token:', e?.message || String(e));
+      return res.status(401).send('invalid_token');
+    }
+  }
+);
+
 /* ------------------------------ static files ---------------------------- */
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(process.cwd(), 'public');
 app.use(express.static(STATIC_DIR, { index: false, maxAge: NODE_ENV === 'production' ? '1y' : 0 }));
@@ -229,12 +244,16 @@ app.get('/sw.js', (req, res) => {
   });
 });
 
-// SPA fallback
+// SPA fallback — only serve index.html if it actually exists; otherwise 404, not 500
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   const indexPath = path.join(STATIC_DIR, 'index.html');
-  res.sendFile(indexPath, (err) => {
-    if (err) next(err);
+  fs.stat(indexPath, (err) => {
+    if (err) {
+      if (err.code === 'ENOENT') return res.status(404).send('');
+      return next(err);
+    }
+    res.sendFile(indexPath);
   });
 });
 
