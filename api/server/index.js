@@ -1,290 +1,193 @@
-// api/server/index.js
-// Express server that: (a) handles magic-link auth, (b) exposes tiny API,
-// and (c) serves the real client build (Vite/Next/CRA) when present.
+require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+require('module-alias')({ base: path.resolve(__dirname, '..') });
+const cors = require('cors');
+const axios = require('axios');
+const express = require('express');
+const passport = require('passport');
+const compression = require('compression');
+const cookieParser = require('cookie-parser');
+const { logger } = require('@librechat/data-schemas');
+const mongoSanitize = require('express-mongo-sanitize');
+const { isEnabled, ErrorController } = require('@librechat/api');
+const { connectDb, indexSync } = require('~/db');
+const validateImageRequest = require('./middleware/validateImageRequest');
+const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { checkMigrations } = require('./services/start/migration');
+const initializeMCPs = require('./services/initializeMCPs');
+const configureSocialLogins = require('./socialLogins');
+const AppService = require('./services/AppService');
+const staticCache = require('./utils/staticCache');
+const noIndex = require('./middleware/noIndex');
+const routes = require('./routes');
 
-const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const cookieParser = require("cookie-parser");
-const jwt = require("jsonwebtoken");
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
-// ---------- basic app ----------
+// Allow PORT=0 to be used for automatic free port assignment
+const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
+const host = HOST || 'localhost';
+const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
+
 const app = express();
-app.set("trust proxy", 1); // Heroku/Proxies
-app.use(express.json());
-app.use(cookieParser());
 
-// ---------- tiny logger ----------
-const LOG = {
-  info: (...a) => console.log(new Date().toISOString(), "info ", ":", ...a),
-  warn: (...a) => console.warn(new Date().toISOString(), "warn ", ":", ...a),
-  error: (...a) => console.error(new Date().toISOString(), "error", ":", ...a),
+const startServer = async () => {
+  if (typeof Bun !== 'undefined') {
+    axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
+  }
+  await connectDb();
+
+  logger.info('Connected to MongoDB');
+  indexSync().catch((err) => {
+    logger.error('[indexSync] Background sync failed:', err);
+  });
+
+  app.disable('x-powered-by');
+  app.set('trust proxy', trusted_proxy);
+
+  await AppService(app);
+
+  const indexPath = path.join(app.locals.paths.dist, 'index.html');
+  const indexHTML = fs.readFileSync(indexPath, 'utf8');
+
+  app.get('/health', (_req, res) => res.status(200).send('OK'));
+
+  /* Middleware */
+  app.use(noIndex);
+  app.use(express.json({ limit: '3mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '3mb' }));
+  app.use(mongoSanitize());
+  app.use(cors());
+  app.use(cookieParser());
+
+  if (!isEnabled(DISABLE_COMPRESSION)) {
+    app.use(compression());
+  } else {
+    console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
+  }
+
+  // Serve static assets with aggressive caching
+  app.use(staticCache(app.locals.paths.dist));
+  app.use(staticCache(app.locals.paths.fonts));
+  app.use(staticCache(app.locals.paths.assets));
+
+  if (!ALLOW_SOCIAL_LOGIN) {
+    console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
+  }
+
+  /* OAUTH */
+  app.use(passport.initialize());
+  passport.use(jwtLogin());
+  passport.use(passportLogin());
+
+  /* LDAP Auth */
+  if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
+    passport.use(ldapLogin);
+  }
+
+  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
+    await configureSocialLogins(app);
+  }
+
+  app.use('/oauth', routes.oauth);
+  /* API Endpoints */
+  app.use('/api/auth', routes.auth);
+  app.use('/api/actions', routes.actions);
+  app.use('/api/keys', routes.keys);
+  app.use('/api/user', routes.user);
+  app.use('/api/search', routes.search);
+  app.use('/api/edit', routes.edit);
+  app.use('/api/messages', routes.messages);
+  app.use('/api/convos', routes.convos);
+  app.use('/api/presets', routes.presets);
+  app.use('/api/prompts', routes.prompts);
+  app.use('/api/categories', routes.categories);
+  app.use('/api/tokenizer', routes.tokenizer);
+  app.use('/api/endpoints', routes.endpoints);
+  app.use('/api/balance', routes.balance);
+  app.use('/api/models', routes.models);
+  app.use('/api/plugins', routes.plugins);
+  app.use('/api/config', routes.config);
+  app.use('/api/assistants', routes.assistants);
+  app.use('/api/files', await routes.files.initialize());
+  app.use('/images/', validateImageRequest, routes.staticRoute);
+  app.use('/api/share', routes.share);
+  app.use('/api/roles', routes.roles);
+  app.use('/api/agents', routes.agents);
+  app.use('/api/banner', routes.banner);
+  app.use('/api/memories', routes.memories);
+  app.use('/api/permissions', routes.accessPermissions);
+
+  app.use('/api/tags', routes.tags);
+  app.use('/api/mcp', routes.mcp);
+
+  app.use(ErrorController);
+
+  app.use((req, res) => {
+    res.set({
+      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+      Expires: process.env.INDEX_EXPIRES || '0',
+    });
+
+    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const saneLang = lang.replace(/"/g, '&quot;');
+    const updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    res.type('html');
+    res.send(updatedIndexHtml);
+  });
+
+  app.listen(port, host, () => {
+    if (host === '0.0.0.0') {
+      logger.info(
+        `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
+      );
+    } else {
+      logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+    }
+
+    initializeMCPs(app).then(() => checkMigrations());
+  });
 };
 
-// ---------- security & env ----------
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
-const MAGIC_SECRET = process.env.MAGIC_SECRET || JWT_SECRET;
+startServer();
 
-const ACCESS_TTL_SEC = Number(process.env.ACCESS_TTL_SEC || 60 * 60); // 1h
-const REFRESH_TTL_SEC = Number(process.env.REFRESH_TTL_SEC || 7 * 24 * 60 * 60); // 7d
-
-// In-memory refresh store (ephemeral on Heroku dyno restarts; OK for demo)
-let refreshHashes = [];
-
-// ---------- helpers ----------
-const signAccess = (sub) =>
-  jwt.sign({ sub, typ: "access" }, JWT_SECRET, { algorithm: "HS256", expiresIn: ACCESS_TTL_SEC });
-const signRefresh = (sub) =>
-  jwt.sign({ sub, typ: "refresh" }, JWT_SECRET, { algorithm: "HS256", expiresIn: REFRESH_TTL_SEC });
-
-function setAuthCookies(res, { access, refresh }) {
-  // Keep names matching your logs: jwt, token, accessToken, refreshToken
-  const cookieOpts = {
-    httpOnly: true,
-    secure: true,
-    sameSite: "None",
-    path: "/",
-  };
-  res.cookie("jwt", access, cookieOpts);
-  res.cookie("token", access, cookieOpts);
-  res.cookie("accessToken", access, cookieOpts);
-  res.cookie("refreshToken", refresh, cookieOpts);
-}
-
-function hash(str) {
-  // super-light “hash” to avoid pulling in bcrypt again; good enough for demo
-  // not for production!
-  const crypto = require("crypto");
-  return crypto.createHash("sha256").update(String(str)).digest("hex");
-}
-
-// Middleware: forward cookie token as Authorization header for API calls
-app.use((req, res, next) => {
-  const skip = req.path.startsWith("/api/auth/refresh");
-  if (!skip) {
-    const tok = req.cookies?.jwt || req.cookies?.token || req.cookies?.accessToken;
-    if (tok && !req.headers.authorization) req.headers.authorization = `Bearer ${tok}`;
-    LOG.info("[bridge] Authorization set from cookie");
-  } else {
-    LOG.info("[bridge] SKIP on /api/auth/refresh");
+let messageCount = 0;
+process.on('uncaughtException', (err) => {
+  if (!err.message.includes('fetch failed')) {
+    logger.error('There was an uncaught error:', err);
   }
-  next();
-});
 
-// ---------- demo API ----------
-app.get("/api/banner", (_req, res) => res.status(200).send(""));
-
-app.get("/api/config", (_req, res) => {
-  res.json({
-    appName: "Own Chat",
-    auth: { magicLink: true },
-  });
-});
-
-app.get("/api/user", (req, res) => {
-  try {
-    const auth = req.headers.authorization?.split(" ")[1];
-    if (!auth) return res.json({ id: "anon", email: null, role: "guest" });
-    const payload = jwt.verify(auth, JWT_SECRET);
-    // In your demo we just map sub -> a fake user
-    return res.json({
-      id: payload.sub || "68a9bb16aa1ca26aef9e9524",
-      email: "demo1@no-mail.invalid",
-      role: "user",
-    });
-  } catch {
-    return res.json({ id: "anon", email: null, role: "guest" });
+  if (err.message.includes('abort')) {
+    logger.warn('There was an uncatchable AbortController error.');
+    return;
   }
-});
 
-// Optional refresh endpoint (no-op demo)
-app.post("/api/auth/refresh", (_req, res) => {
-  // In real life you'd verify refresh token and issue new access.
-  // We keep it simple because the app already works fine without it.
-  res.status(302).send("ok");
-});
-
-// ---------- Magic link flow ----------
-/**
- * 1) User hits /m/:token where :token is a JWT signed with MAGIC_SECRET.
- * 2) We verify and mint access+refresh cookies, then redirect to /m/signed.
- */
-app.get("/m/:token", (req, res) => {
-  LOG.info("[req] GET", req.originalUrl, "cookies:", Object.keys(req.cookies || []));
-  const token = req.params.token;
-  LOG.info("[magic] GET /m/:token hit param token");
-
-  try {
-    const payload = jwt.verify(token, MAGIC_SECRET, { algorithms: ["HS256"] });
-    LOG.info("[magic] token verified", {
-      aud: payload.aud || "magic-link",
-      sub: payload.sub,
-      iat: payload.iat,
-      exp: payload.exp,
-    });
-
-    // Lookup user by sub; here we just demo a single user
-    const user = {
-      id: payload.sub || "68a9bb16aa1ca26aef9e9524",
-      email: "demo1@no-mail.invalid",
-      role: "user",
-    };
-    LOG.info("[magic] user found", user);
-
-    const access = signAccess(user.id);
-    const refresh = signRefresh(user.id);
-    LOG.info("[magic] signed tokens { access: ****, refresh: **** }");
-
-    // "Store" refresh hash (demo)
-    const h = hash(refresh);
-    const before = refreshHashes.length;
-    if (!refreshHashes.includes(h)) refreshHashes.push(h);
-    LOG.info("[magic] saved refresh hash", {
-      listLenBefore: before,
-      listLenAfter: refreshHashes.length,
-      hash: h.length > 14 ? `${h.slice(0, 6)}…${h.slice(-6)}` : h,
-    });
-
-    setAuthCookies(res, { access, refresh });
-    LOG.info("[magic] set cookies", {
-      cookieNames: ["jwt", "token", "accessToken", "refreshToken"],
-      sameSite: "None",
-      secure: true,
-    });
-
-    return res.redirect(302, "/m/signed");
-  } catch (err) {
-    LOG.warn("[magic] invalid token:", err?.message || err);
-    return res.status(401).send("invalid_token");
-  }
-});
-
-// Tiny confirmation page (kept for debugging)
-app.get("/m/signed", (_req, res) => {
-  res
-    .status(200)
-    .send(
-      `<!doctype html><meta charset="utf-8"/><title>Signed</title><style>body{font-family:ui-serif,Georgia,serif;padding:24px;font-size:40px}</style><div>Signed in ✔</div>`
+  if (err.message.includes('GoogleGenerativeAI')) {
+    logger.warn(
+      '\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303',
     );
-});
+    return;
+  }
 
-// ---------- Static client (real UI) ----------
-/**
- * We try to find a built frontend automatically.
- * You can override with FRONTEND_DIR (absolute or relative to repo root).
- */
-function resolveClientDir() {
-  const custom = process.env.FRONTEND_DIR;
-  const candidates = [
-    custom && path.resolve(custom),
-    path.resolve(__dirname, "../../web/dist"),
-    path.resolve(__dirname, "../../client/dist"),
-    path.resolve(__dirname, "../../frontend/dist"),
-    path.resolve(__dirname, "../../app/dist"),
-    path.resolve(__dirname, "../../dist"),
-    path.resolve(__dirname, "../public"), // fallback to server/public
-    path.resolve(__dirname, "../../public"),
-  ].filter(Boolean);
-
-  for (const p of candidates) {
-    if (fs.existsSync(p) && fs.existsSync(path.join(p, "index.html"))) {
-      return p;
+  if (err.message.includes('fetch failed')) {
+    if (messageCount === 0) {
+      logger.warn('Meilisearch error, search will be disabled');
+      messageCount++;
     }
-  }
-  return null;
-}
 
-const CLIENT_DIR = resolveClientDir();
-if (CLIENT_DIR) {
-  LOG.info(`[static] Serving client from: ${CLIENT_DIR}`);
-  app.use(
-    express.static(CLIENT_DIR, {
-      index: false,
-      maxAge: "1y",
-      setHeaders: (res, filePath) => {
-        // never cache index.html
-        if (filePath.endsWith("index.html")) {
-          res.setHeader("Cache-Control", "no-store");
-        }
-      },
-    })
-  );
-
-  // Service worker & workbox helpers if present
-  for (const p of ["sw.js", "workbox-*.js", "manifest.webmanifest"]) {
-    app.get(`/${p}`, (req, res, next) => {
-      const file = path.join(CLIENT_DIR, req.path);
-      if (fs.existsSync(file)) return res.sendFile(file);
-      return next();
-    });
+    return;
   }
 
-  // App routes -> index.html
-  const SPA_ROUTES = [
-    "/",
-    "/c/new",
-    "/c/:id",
-    "/login",
-    "/settings",
-    "/chat",
-    "/app",
-    "/embed/*",
-  ];
+  if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
+    logger.error(
+      '\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.',
+    );
+    return;
+  }
 
-  app.get(SPA_ROUTES, (_req, res) => {
-    res.sendFile(path.join(CLIENT_DIR, "index.html"));
-  });
-
-  // Catch-all (but leave /api/* and /m/* to their handlers)
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api/") || req.path.startsWith("/m/")) return next();
-    const indexPath = path.join(CLIENT_DIR, "index.html");
-    if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
-    return next();
-  });
-} else {
-  LOG.warn("[static] No client build found. Serving placeholder UI.");
-
-  // Minimal placeholder so the app is still usable
-  app.get("/", async (req, res) => {
-    // Try to show who we think you are
-    let user = { id: "anon", email: null, role: "guest" };
-    try {
-      const tok = req.cookies?.jwt || req.cookies?.token || req.cookies?.accessToken;
-      if (tok) {
-        const payload = jwt.verify(tok, JWT_SECRET);
-        user = {
-          id: payload.sub || "68a9bb16aa1ca26aef9e9524",
-          email: "demo1@no-mail.invalid",
-          role: "user",
-        };
-      }
-    } catch {}
-    const json = JSON.stringify(user, null, 2);
-    res
-      .status(200)
-      .send(`<!doctype html>
-<meta charset="utf-8"/>
-<title>Own Chat</title>
-<style>
-  body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans;
-       padding:24px;line-height:1.5}
-  pre{background:#f3f3f3;padding:16px;border-radius:12px;overflow:auto}
-  a{color:#2563eb;text-decoration-thickness:2px}
-</style>
-<h1>Own Chat</h1>
-<p>This is a minimal placeholder UI served by <code>api/server/index.js</code>.</p>
-<p><a href="/m/signed">Test: signed page</a></p>
-<pre>${json}</pre>`);
-  });
-}
-
-// --------------- errors ---------------
-app.use((err, _req, res, _next) => {
-  LOG.error("Unhandled error:", err?.message || err);
-  res.status(500).send("server_error");
+  process.exit(1);
 });
 
-// --------------- start ---------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => LOG.info(`Server listening on :${PORT}`));
+/** Export app for easier testing purposes */
+module.exports = app;
