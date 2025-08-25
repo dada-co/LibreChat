@@ -19,7 +19,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 
 // ⬇️ If your routes live elsewhere, update these paths accordingly.
-const magicRoutes = require('./routes/magic'); // e.g., api/server/routes/magic.js
+const magicRoutes = require('../routes/magic'); // e.g., api/server/routes/magic.js
 const routes = require('./routes');            // e.g., api/server/routes/index.js (exports { auth, api, ... })
 
 const app = express();
