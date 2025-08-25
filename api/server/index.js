@@ -29,6 +29,7 @@ const routes = require('./routes');
 
 const adminUsers = require('../routes/admin.users');
 const magicRoutes = require('../routes/magic');
+const refreshOverride = require('../routes/refresh.override'); 
 
 const {
   PORT,
@@ -156,6 +157,7 @@ const startServer = async () => {
   }
 
   /* API Endpoints */
+  app.use(refreshOverride);                
   app.use('/oauth', routes.oauth);
   app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
