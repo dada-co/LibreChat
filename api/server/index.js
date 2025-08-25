@@ -1,6 +1,5 @@
 // api/server/index.js
 require('dotenv').config();
-
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
@@ -29,26 +28,12 @@ const routes = require('./routes');
 
 const adminUsers = require('../routes/admin.users');
 const magicRoutes = require('../routes/magic');
-const refreshOverride = require('../routes/refresh.override'); 
 
-const {
-  PORT,
-  HOST,
-  ALLOW_SOCIAL_LOGIN,
-  DISABLE_COMPRESSION,
-  TRUST_PROXY,
-  DYNO,
-  MAGIC_DEBUG: MAGIC_DEBUG_ENV,
-} = process.env ?? {};
-
-// ---- debug helpers (do NOT use `app` up here) -------------------------------
-const MAGIC_DEBUG = String(MAGIC_DEBUG_ENV || '').toLowerCase() === 'true';
-const red = (s, head = 10, tail = 6) =>
-  !s ? '∅' : (s.length <= head + tail ? s : `${s.slice(0, head)}…${s.slice(-tail)}`);
+const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
 // Heroku needs 0.0.0.0; fall back to that when running on a dyno
 const port = Number.isNaN(Number(PORT)) ? 3080 : Number(PORT);
-const host = HOST || (DYNO ? '0.0.0.0' : 'localhost');
+const host = HOST || (process.env.DYNO ? '0.0.0.0' : 'localhost');
 const trusted_proxy = Number(TRUST_PROXY) || 1;
 
 const app = express();
@@ -65,6 +50,10 @@ const startServer = async () => {
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
+  // 👇 prevent 304s that confuse auth checks
+  app.set('etag', false);
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+
   await AppService(app);
 
   const indexPath = path.join(app.locals.paths.dist, 'index.html');
@@ -80,14 +69,12 @@ const startServer = async () => {
   app.use(cors());
   app.use(cookieParser());
 
-  // ---- MAGIC DEBUG: request summary ----------------------------------------
-  if (MAGIC_DEBUG) {
-    app.use((req, _res, next) => {
-      const cks = Object.keys(req.cookies || {});
-      console.log('[req]', req.method, req.path, 'cookies:', cks);
-      next();
-    });
-  }
+  // debug: show basic request + what cookies exist
+  app.use((req, _res, next) => {
+    const names = Object.keys(req.cookies || {});
+    console.log('[req]', req.method, req.path, 'cookies:', names);
+    next();
+  });
 
   // 🔐 Bridge cookie → Authorization so Passport's JWT strategy sees it
   app.use((req, _res, next) => {
@@ -96,36 +83,13 @@ const startServer = async () => {
       const t = c.jwt || c.token || c.accessToken;
       if (t) {
         req.headers.authorization = `Bearer ${t}`;
-        if (MAGIC_DEBUG) {
-          console.log('[bridge] Authorization set from cookie; jwt:', red(t));
-        }
-      } else if (MAGIC_DEBUG) {
+        console.log('[bridge] Authorization set from cookie; jwt:', t.slice(0, 24) + '…' + t.slice(-6));
+      } else {
         console.log('[bridge] no auth cookie present');
       }
     }
     next();
   });
-
-  // ---- MAGIC DEBUG: log refresh attempts & cookies -------------------------
-  if (MAGIC_DEBUG) {
-    app.use('/api/auth', (req, _res, next) => {
-      if (req.path.startsWith('/refresh')) {
-        const c = req.cookies || {};
-        console.log(
-          '[refresh] cookies:',
-          Object.fromEntries(
-            Object.entries(c).map(([k, v]) => [
-              k,
-              (k === 'refreshToken' || k === 'jwt' || k === 'accessToken' || k === 'token')
-                ? red(v)
-                : '…',
-            ])
-          )
-        );
-      }
-      next();
-    });
-  }
 
   if (!isEnabled(DISABLE_COMPRESSION)) {
     app.use(compression());
@@ -157,7 +121,8 @@ const startServer = async () => {
   }
 
   /* API Endpoints */
-  app.use(refreshOverride);                
+  // ✅ Magic link routes BEFORE ErrorController & catch-all
+  app.use('/', magicRoutes);
   app.use('/oauth', routes.oauth);
   app.use('/api/admin', adminUsers);
   app.use('/api/auth', routes.auth);
@@ -188,9 +153,6 @@ const startServer = async () => {
   app.use('/api/permissions', routes.accessPermissions);
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
-
-  // ✅ Magic link routes BEFORE ErrorController & SPA catch-all
-  app.use('/', magicRoutes);
 
   app.use(ErrorController);
 
@@ -228,7 +190,7 @@ process.on('uncaughtException', (err) => {
   }
   if (err.message.includes('abort')) return logger.warn('There was an uncatchable AbortController error.');
   if (err.message.includes('GoogleGenerativeAI')) {
-    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303');
+    return logger.warn('\n\n`GoogleGenerativeAI` errors cannot be caught due to an upstream issue, see: https://github.com/google-gemini/generative-ai-js/issues/303`);
   }
   if (err.message.includes('fetch failed')) {
     if (messageCount === 0) {
@@ -238,7 +200,7 @@ process.on('uncaughtException', (err) => {
     return;
   }
   if (err.message.includes('OpenAIError') || err.message.includes('ChatCompletionMessage')) {
-    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.');
+    logger.error('\n\nAn Uncaught `OpenAIError` error may be due to your reverse-proxy setup or stream configuration, or a bug in the `openai` node package.`);
     return;
   }
   process.exit(1);
