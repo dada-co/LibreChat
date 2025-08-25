@@ -1,14 +1,6 @@
 // api/server/index.js
 'use strict';
 
-/**
- * Minimal, safe Express server with:
- *  - Cookie→Authorization bridge
- *  - /api/auth/refresh override (must be registered before other routers)
- *  - Static assets + SPA fallback
- *  - Clean logging and error handling for Node 22.x
- */
-
 require('dotenv').config();
 
 const path = require('path');
@@ -18,27 +10,17 @@ const compression = require('compression');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 
-// ⬇️ If your routes live elsewhere, update these paths accordingly.
-const magicRoutes = require('../routes/magic'); // e.g., api/server/routes/magic.js
-const routes = require('./routes');            // e.g., api/server/routes/index.js (exports { auth, api, ... })
-
 const app = express();
-
-/* --------------------------- basic app config --------------------------- */
 
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-
-// Allow frontend origin if set; otherwise, default to permissive in dev
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || undefined;
 
 app.set('trust proxy', 1);
-
 app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
 app.use(
   cors({
     origin: FRONTEND_ORIGIN ? [FRONTEND_ORIGIN] : true,
@@ -47,12 +29,10 @@ app.use(
 );
 
 /* ------------------------------ tiny logger ---------------------------- */
-
 const color = {
   green: (s) => `\x1b[32m${s}\x1b[39m`,
   yellow: (s) => `\x1b[33m${s}\x1b[39m`,
   red: (s) => `\x1b[31m${s}\x1b[39m`,
-  gray: (s) => `\x1b[90m${s}\x1b[39m`,
 };
 const logger = {
   info: (...a) => console.log(new Date().toISOString(), color.green('info'), ':', ...a),
@@ -60,7 +40,6 @@ const logger = {
   error: (...a) => console.error(new Date().toISOString(), color.red('error'), ':', ...a),
 };
 
-// Request log (method, path, cookies present)
 app.use((req, _res, next) => {
   const cookieKeys = Object.keys(req.cookies || {});
   logger.info(`[req] ${req.method} ${req.path} cookies: ${JSON.stringify(cookieKeys)}`);
@@ -68,11 +47,9 @@ app.use((req, _res, next) => {
 });
 
 /* --------------------- cookie -> Authorization bridge ------------------- */
-
 const SKIP_BRIDGE = new Set(['/api/auth/refresh', '/api/auth/logout']);
 app.use((req, _res, next) => {
   if (SKIP_BRIDGE.has(req.path)) {
-    logger.info(`[bridge] SKIP on ${req.path}`);
     return next();
   }
   if (!req.headers.authorization) {
@@ -80,100 +57,58 @@ app.use((req, _res, next) => {
     const t = c.jwt || c.token || c.accessToken;
     if (t) {
       req.headers.authorization = `Bearer ${t}`;
-      const left = t.slice(0, 7);
-      const right = t.slice(-7);
-      logger.info(`[bridge] Authorization set from cookie; jwt: ${left}...${right}`);
+      logger.info('[bridge] Authorization set from cookie');
     }
-  } else {
-    logger.info('[bridge] Authorization already present');
   }
   next();
 });
 
-/* ------------------------- helper: cookie setter ------------------------ */
-
+/* ------------------------ cookie helpers (secure) ----------------------- */
 function setAccessCookies(res, accessToken) {
   const ONE_HOUR_MS = 60 * 60 * 1000;
-  const BASE = {
-    httpOnly: true,
-    sameSite: 'None',
-    secure: true,
-    path: '/',
-    maxAge: ONE_HOUR_MS,
-  };
-  res.cookie('jwt', accessToken, BASE);
-  res.cookie('token', accessToken, BASE);
-  res.cookie('accessToken', accessToken, BASE);
+  const opts = { httpOnly: true, sameSite: 'None', secure: true, path: '/', maxAge: ONE_HOUR_MS };
+  res.cookie('jwt', accessToken, opts);
+  res.cookie('token', accessToken, opts);
+  res.cookie('accessToken', accessToken, opts);
+}
+function setRefreshCookie(res, refreshToken) {
+  const THIRTY_D_MS = 30 * 24 * 60 * 60 * 1000;
+  const opts = { httpOnly: true, sameSite: 'None', secure: true, path: '/', maxAge: THIRTY_D_MS };
+  res.cookie('refreshToken', refreshToken, opts);
 }
 
 /* -------------------- /api/auth/refresh OVERRIDE (early) ---------------- */
-
-/**
- * IMPORTANT:
- * This must be defined BEFORE any other auth/magic routers,
- * otherwise a previously-registered handler may redirect with 302.
- */
 app.post('/api/auth/refresh', async (req, res) => {
   logger.info('[refresh] override hit');
   try {
     const { refreshToken } = req.cookies || {};
-    if (!refreshToken) {
-      logger.warn('[refresh] missing refresh cookie');
-      return res.status(401).json({ error: 'missing_refresh_cookie' });
-    }
+    if (!refreshToken) return res.status(401).json({ error: 'missing_refresh_cookie' });
 
     const refreshSecret =
       process.env.REFRESH_TOKEN_SECRET ||
       process.env.JWT_REFRESH_SECRET ||
       process.env.JWT_SECRET;
 
-    if (!refreshSecret) {
-      logger.error('[refresh] no refresh secret configured');
+    if (!refreshSecret || !process.env.JWT_SECRET) {
+      logger.error('[refresh] secrets not configured');
       return res.status(500).json({ error: 'server_misconfigured' });
     }
 
-    // Verify refresh token
     const payload = jwt.verify(refreshToken, refreshSecret);
     const userId = payload.sub || payload.id || payload._id;
-    if (!userId) {
-      logger.warn('[refresh] refresh token missing subject');
-      return res.status(401).json({ error: 'invalid_refresh' });
-    }
-
-    // Fetch user. If you use Mongoose, ensure the model is already registered elsewhere.
-    // Require inline to avoid hard dependency in environments without mongoose.
-    let user = null;
-    try {
-      const mongoose = require('mongoose');
-      if (mongoose?.models?.User) {
-        user = await mongoose.models.User.findById(userId).lean();
-      }
-    } catch {
-      // ignore if mongoose isn't installed / used
-    }
-
-    // If no DB lookup is needed in your setup, you could skip the query. For safety:
-    if (!user && process.env.REFRESH_ALLOW_MISSING_USER !== 'true') {
-      logger.warn('[refresh] user not found for sub:', userId);
-      return res.status(404).json({ error: 'user_not_found' });
-    }
+    if (!userId) return res.status(401).json({ error: 'invalid_refresh' });
 
     const accessClaims = {
       sub: userId,
       id: userId,
       _id: userId,
-      email: user?.email || '',
-      name: user?.name || '',
-      role: user?.role || 'user',
-      roles: [user?.role || 'user'],
+      email: payload.email || '',
+      role: payload.role || 'user',
       provider: 'magic',
     };
-
-    const accessToken = jwt.sign(
-      accessClaims,
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
-    );
+    const accessToken = jwt.sign(accessClaims, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '1h',
+    });
 
     setAccessCookies(res, accessToken);
     logger.info('[refresh] issued new access token');
@@ -184,31 +119,108 @@ app.post('/api/auth/refresh', async (req, res) => {
   }
 });
 
-/* ----------------------------- other routers ---------------------------- */
+/* --------------------------- inline "magic" routes ---------------------- */
+// Accepts a magic-link JWT, issues access+refresh cookies, and redirects to /m/signed
+app.get('/m/:token', (req, res) => {
+  const raw = req.params.token;
+  logger.info('[magic] GET /m/:token hit param token');
+  try {
+    const magicSecret = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
+    if (!magicSecret) {
+      logger.error('[magic] no MAGIC_LINK_SECRET/JWT_SECRET');
+      return res.status(500).send('server_misconfigured');
+    }
+    const magic = jwt.verify(raw, magicSecret);
+    logger.info('[magic] token verified', {
+      aud: magic.aud,
+      sub: magic.sub,
+      iat: magic.iat,
+      exp: magic.exp,
+    });
 
-// Mount magic routes (e.g. /m/:token -> signs cookies and redirects)
-app.use('/', magicRoutes);
+    const userId = magic.sub || magic.id || magic._id || 'user';
+    const accessClaims = {
+      sub: userId,
+      id: userId,
+      _id: userId,
+      email: magic.email || 'demo1@no-mail.invalid',
+      role: 'user',
+      provider: 'magic',
+    };
 
-// Mount the rest of your API routers (expects routes.auth, routes.api, etc.)
-if (routes?.auth) app.use('/api/auth', routes.auth);
-if (routes?.api) app.use('/api', routes.api);
+    if (!process.env.JWT_SECRET) {
+      logger.error('[magic] JWT_SECRET missing');
+      return res.status(500).send('server_misconfigured');
+    }
+
+    const access = jwt.sign(accessClaims, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '1h',
+    });
+
+    const refreshSecret =
+      process.env.REFRESH_TOKEN_SECRET ||
+      process.env.JWT_REFRESH_SECRET ||
+      process.env.JWT_SECRET;
+
+    const refresh = jwt.sign(
+      { sub: userId, email: accessClaims.email, role: accessClaims.role },
+      refreshSecret,
+      { expiresIn: process.env.REFRESH_EXPIRES_IN || '30d' }
+    );
+
+    logger.info('[magic] signed tokens { access: ****, refresh: **** }');
+    setRefreshCookie(res, refresh);
+    setAccessCookies(res, access);
+    logger.info('[magic] set cookies { cookieNames: ["jwt","token","accessToken","refreshToken"], sameSite: "None", secure: true }');
+
+    return res.redirect(302, '/m/signed');
+  } catch (e) {
+    logger.warn('[magic] invalid token:', e?.message || String(e));
+    return res.status(401).send('invalid_token');
+  }
+});
+
+app.get('/m/signed', (_req, res) => {
+  res
+    .status(200)
+    .send('<!doctype html><meta charset="utf-8"><title>Signed</title><h1>Signed in ✔</h1>');
+});
+
+/* -------------------------- minimal API fallbacks ----------------------- */
+app.get('/api/user', (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) return res.status(401).json({ error: 'missing_token' });
+
+    const data = jwt.verify(token, process.env.JWT_SECRET);
+    const user = {
+      id: data.sub || data.id || data._id,
+      email: data.email || 'demo1@no-mail.invalid',
+      role: data.role || 'user',
+    };
+    return res.status(200).json({ user });
+  } catch (e) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+});
+
+// Your frontend seems to call these; respond benignly
+app.get('/api/config', (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    auth: { sameSite: 'None', secure: true, provider: 'magic-link' },
+    env: NODE_ENV,
+  });
+});
+app.get('/api/banner', (_req, res) => res.status(200).send(''));
 
 /* ------------------------------ static files ---------------------------- */
-
-/**
- * Serve your built frontend. Update STATIC_DIR if your build output is different.
- * Example common locations: ../../web/dist, ../../client/dist, ../../public
- */
-const STATIC_DIR =
-  process.env.STATIC_DIR ||
-  path.resolve(process.cwd(), 'public');
-
+const STATIC_DIR = process.env.STATIC_DIR || path.resolve(process.cwd(), 'public');
 app.use(express.static(STATIC_DIR, { index: false, maxAge: NODE_ENV === 'production' ? '1y' : 0 }));
 
-// Service worker (often needs to be served at the root)
 app.get('/sw.js', (req, res) => {
   const swPath = path.join(STATIC_DIR, 'sw.js');
-  logger.info('[req] GET /sw.js');
   res.sendFile(swPath, (err) => {
     if (err) {
       logger.warn('sw.js not found at', swPath);
@@ -217,11 +229,9 @@ app.get('/sw.js', (req, res) => {
   });
 });
 
-// SPA fallback: let the client-side router handle everything else
+// SPA fallback
 app.get('*', (req, res, next) => {
-  // If request looks like API, skip to 404/next handlers
   if (req.path.startsWith('/api/')) return next();
-
   const indexPath = path.join(STATIC_DIR, 'index.html');
   res.sendFile(indexPath, (err) => {
     if (err) next(err);
@@ -229,26 +239,17 @@ app.get('*', (req, res, next) => {
 });
 
 /* ----------------------------- error handler ---------------------------- */
-
 app.use((err, _req, res, _next) => {
   logger.error('Unhandled error:', err?.message || err);
   res.status(500).json({ error: 'internal_error' });
 });
 
 /* ------------------------------- start up ------------------------------- */
-
 const server = app.listen(PORT, () => {
   logger.info(`Server listening on :${PORT}`);
 });
 
-/* ------------------------------- process hooks -------------------------- */
-
-process.on('uncaughtException', (err) => {
-  logger.error('uncaughtException:', err?.message || err);
-});
-
-process.on('unhandledRejection', (reason) => {
-  logger.error('unhandledRejection:', reason?.message || String(reason));
-});
+process.on('uncaughtException', (err) => logger.error('uncaughtException:', err?.message || err));
+process.on('unhandledRejection', (r) => logger.error('unhandledRejection:', r?.message || String(r)));
 
 module.exports = { app, server };
