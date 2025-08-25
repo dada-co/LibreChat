@@ -1,247 +1,290 @@
 // api/server/index.js
-// Minimal auth + static serving server for Own Chat (Heroku-friendly, Node CJS)
+// Express server that: (a) handles magic-link auth, (b) exposes tiny API,
+// and (c) serves the real client build (Vite/Next/CRA) when present.
 
-require('dotenv').config();
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
 
-const path = require('path');
-const fs = require('fs');
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const jwt = require('jsonwebtoken');
-const cors = require('cors');
-
+// ---------- basic app ----------
 const app = express();
-
-// ---------- Config ----------
-const PORT = process.env.PORT || 3000;
-const ROOT = path.join(__dirname, '..', '..'); // repo root (adjust if your layout differs)
-
-// Where your built frontend lives (Vite/React etc.)
-const DIST_DIR = path.join(ROOT, 'client', 'dist');
-// Optional public folder for static assets
-const PUBLIC_DIR = path.join(ROOT, 'public');
-
-// Optional: redirect to another origin after login or for / and /c/new
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '';
-
-// Auth secrets
-const MAGIC_LINK_SECRET = process.env.MAGIC_LINK_SECRET || 'dev-magic';
-const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET || 'dev-access';
-const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'dev-refresh';
-
-// ---------- App setup ----------
-app.set('trust proxy', 1);
+app.set("trust proxy", 1); // Heroku/Proxies
 app.use(express.json());
 app.use(cookieParser());
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  })
-);
 
-// Tiny logger
-function log(level, ...args) {
-  const ts = new Date().toISOString();
-  // eslint-disable-next-line no-console
-  console[level](`${ts} ${level.padEnd(5)} :`, ...args);
+// ---------- tiny logger ----------
+const LOG = {
+  info: (...a) => console.log(new Date().toISOString(), "info ", ":", ...a),
+  warn: (...a) => console.warn(new Date().toISOString(), "warn ", ":", ...a),
+  error: (...a) => console.error(new Date().toISOString(), "error", ":", ...a),
+};
+
+// ---------- security & env ----------
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+const MAGIC_SECRET = process.env.MAGIC_SECRET || JWT_SECRET;
+
+const ACCESS_TTL_SEC = Number(process.env.ACCESS_TTL_SEC || 60 * 60); // 1h
+const REFRESH_TTL_SEC = Number(process.env.REFRESH_TTL_SEC || 7 * 24 * 60 * 60); // 7d
+
+// In-memory refresh store (ephemeral on Heroku dyno restarts; OK for demo)
+let refreshHashes = [];
+
+// ---------- helpers ----------
+const signAccess = (sub) =>
+  jwt.sign({ sub, typ: "access" }, JWT_SECRET, { algorithm: "HS256", expiresIn: ACCESS_TTL_SEC });
+const signRefresh = (sub) =>
+  jwt.sign({ sub, typ: "refresh" }, JWT_SECRET, { algorithm: "HS256", expiresIn: REFRESH_TTL_SEC });
+
+function setAuthCookies(res, { access, refresh }) {
+  // Keep names matching your logs: jwt, token, accessToken, refreshToken
+  const cookieOpts = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+    path: "/",
+  };
+  res.cookie("jwt", access, cookieOpts);
+  res.cookie("token", access, cookieOpts);
+  res.cookie("accessToken", access, cookieOpts);
+  res.cookie("refreshToken", refresh, cookieOpts);
 }
 
-// Helper: read user from access token in cookie Authorization bridge
-function getUserFromRequest(req) {
-  const token =
-    (req.cookies && (req.cookies.jwt || req.cookies.accessToken || req.cookies.token)) ||
-    (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, ''));
-
-  if (!token) return null;
-  try {
-    const payload = jwt.verify(token, ACCESS_TOKEN_SECRET);
-    return {
-      id: payload.sub,
-      email: payload.email || 'demo1@no-mail.invalid',
-      role: payload.role || 'user',
-    };
-  } catch {
-    return null;
-  }
+function hash(str) {
+  // super-light “hash” to avoid pulling in bcrypt again; good enough for demo
+  // not for production!
+  const crypto = require("crypto");
+  return crypto.createHash("sha256").update(String(str)).digest("hex");
 }
 
-// Bridge: set Authorization header from cookies for convenience
-app.use((req, _res, next) => {
-  const c = Object.keys(req.cookies || {});
-  log('info', `[req] ${req.method} ${req.path} cookies: ${JSON.stringify(c)}`);
-  if (req.cookies && (req.cookies.jwt || req.cookies.accessToken || req.cookies.token)) {
-    req.headers.authorization = `Bearer ${
-      req.cookies.jwt || req.cookies.accessToken || req.cookies.token
-    }`;
-    log('info', '[bridge] Authorization set from cookie');
+// Middleware: forward cookie token as Authorization header for API calls
+app.use((req, res, next) => {
+  const skip = req.path.startsWith("/api/auth/refresh");
+  if (!skip) {
+    const tok = req.cookies?.jwt || req.cookies?.token || req.cookies?.accessToken;
+    if (tok && !req.headers.authorization) req.headers.authorization = `Bearer ${tok}`;
+    LOG.info("[bridge] Authorization set from cookie");
+  } else {
+    LOG.info("[bridge] SKIP on /api/auth/refresh");
   }
   next();
 });
 
-// ---------- API ----------
-app.get('/api/config', (_req, res) => {
+// ---------- demo API ----------
+app.get("/api/banner", (_req, res) => res.status(200).send(""));
+
+app.get("/api/config", (_req, res) => {
   res.json({
-    app: 'own-chat',
-    env: process.env.NODE_ENV || 'development',
+    appName: "Own Chat",
+    auth: { magicLink: true },
   });
 });
 
-app.get('/api/banner', (_req, res) => {
-  res.status(200).send(''); // empty: no banner
+app.get("/api/user", (req, res) => {
+  try {
+    const auth = req.headers.authorization?.split(" ")[1];
+    if (!auth) return res.json({ id: "anon", email: null, role: "guest" });
+    const payload = jwt.verify(auth, JWT_SECRET);
+    // In your demo we just map sub -> a fake user
+    return res.json({
+      id: payload.sub || "68a9bb16aa1ca26aef9e9524",
+      email: "demo1@no-mail.invalid",
+      role: "user",
+    });
+  } catch {
+    return res.json({ id: "anon", email: null, role: "guest" });
+  }
 });
 
-app.get('/api/user', (req, res) => {
-  const user = getUserFromRequest(req);
-  if (!user) return res.status(401).json({ error: 'unauthorized' });
-  res.json(user);
-});
-
-// Refresh endpoint stub (you can extend with DB/allow-list if needed)
-app.post('/api/auth/refresh', (req, res) => {
-  // We don't actually refresh here for demo; just 302 back (kept to match logs)
-  res.redirect(302, '/');
+// Optional refresh endpoint (no-op demo)
+app.post("/api/auth/refresh", (_req, res) => {
+  // In real life you'd verify refresh token and issue new access.
+  // We keep it simple because the app already works fine without it.
+  res.status(302).send("ok");
 });
 
 // ---------- Magic link flow ----------
+/**
+ * 1) User hits /m/:token where :token is a JWT signed with MAGIC_SECRET.
+ * 2) We verify and mint access+refresh cookies, then redirect to /m/signed.
+ */
+app.get("/m/:token", (req, res) => {
+  LOG.info("[req] GET", req.originalUrl, "cookies:", Object.keys(req.cookies || []));
+  const token = req.params.token;
+  LOG.info("[magic] GET /m/:token hit param token");
 
-// NOTE: ORDER MATTERS!
-// 1) A simple signed page you can hit to verify you’re signed-in
-app.get('/m/signed', (req, res) => {
-  const user = getUserFromRequest(req);
-  // Simple white page used in your earlier screenshot
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(`
-    <!doctype html>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Signed in</title>
-    <div style="font-family: ui-sans-serif,system-ui; font-size: 48px; padding: 16px;">
-      <b>Signed in ✔</b>
-    </div>
-    <script>console.log(${JSON.stringify({ user })});</script>
-  `);
-});
-
-// 2) /m/:token — verifies the magic token and sets cookies, then redirects
-app.get('/m/:token', (req, res) => {
-  const { token } = req.params;
-  log('info', '[magic] GET /m/:token hit param token');
-
-  let payload;
   try {
-    payload = jwt.verify(token, MAGIC_LINK_SECRET);
-  } catch (e) {
-    log('warn', `[magic] invalid token: ${e.message}`);
-    return res.status(401).send('invalid_token');
+    const payload = jwt.verify(token, MAGIC_SECRET, { algorithms: ["HS256"] });
+    LOG.info("[magic] token verified", {
+      aud: payload.aud || "magic-link",
+      sub: payload.sub,
+      iat: payload.iat,
+      exp: payload.exp,
+    });
+
+    // Lookup user by sub; here we just demo a single user
+    const user = {
+      id: payload.sub || "68a9bb16aa1ca26aef9e9524",
+      email: "demo1@no-mail.invalid",
+      role: "user",
+    };
+    LOG.info("[magic] user found", user);
+
+    const access = signAccess(user.id);
+    const refresh = signRefresh(user.id);
+    LOG.info("[magic] signed tokens { access: ****, refresh: **** }");
+
+    // "Store" refresh hash (demo)
+    const h = hash(refresh);
+    const before = refreshHashes.length;
+    if (!refreshHashes.includes(h)) refreshHashes.push(h);
+    LOG.info("[magic] saved refresh hash", {
+      listLenBefore: before,
+      listLenAfter: refreshHashes.length,
+      hash: h.length > 14 ? `${h.slice(0, 6)}…${h.slice(-6)}` : h,
+    });
+
+    setAuthCookies(res, { access, refresh });
+    LOG.info("[magic] set cookies", {
+      cookieNames: ["jwt", "token", "accessToken", "refreshToken"],
+      sameSite: "None",
+      secure: true,
+    });
+
+    return res.redirect(302, "/m/signed");
+  } catch (err) {
+    LOG.warn("[magic] invalid token:", err?.message || err);
+    return res.status(401).send("invalid_token");
   }
-
-  log('info', '[magic] token verified', {
-    aud: payload.aud,
-    sub: payload.sub,
-    iat: payload.iat,
-    exp: payload.exp,
-  });
-
-  // Build short-lived access + longer refresh
-  const access = jwt.sign(
-    { sub: payload.sub, email: 'demo1@no-mail.invalid', role: 'user' },
-    ACCESS_TOKEN_SECRET,
-    { expiresIn: '1h' }
-  );
-  const refresh = jwt.sign({ sub: payload.sub }, REFRESH_TOKEN_SECRET, { expiresIn: '7d' });
-
-  log('info', '[magic] signed tokens { access: ****, refresh: **** }');
-
-  // Cookies compatible with cross-site redirect if needed
-  const common = {
-    httpOnly: true,
-    sameSite: 'None',
-    secure: true,
-    path: '/',
-  };
-
-  res.cookie('jwt', access, { ...common, maxAge: 3600 * 1000 });
-  res.cookie('token', access, { ...common, maxAge: 3600 * 1000 });
-  res.cookie('accessToken', access, { ...common, maxAge: 3600 * 1000 });
-  res.cookie('refreshToken', refresh, { ...common, maxAge: 7 * 24 * 3600 * 1000 });
-
-  log('info', '[magic] set cookies', {
-    cookieNames: ['jwt', 'token', 'accessToken', 'refreshToken'],
-    sameSite: 'None',
-    secure: true,
-  });
-
-  // After signing set, go to /m/signed (safe on same origin)
-  res.redirect(302, '/m/signed');
 });
 
-// ---------- Static UI serving ----------
+// Tiny confirmation page (kept for debugging)
+app.get("/m/signed", (_req, res) => {
+  res
+    .status(200)
+    .send(
+      `<!doctype html><meta charset="utf-8"/><title>Signed</title><style>body{font-family:ui-serif,Georgia,serif;padding:24px;font-size:40px}</style><div>Signed in ✔</div>`
+    );
+});
 
-function sendFrontend(req, res) {
-  // If you set FRONTEND_ORIGIN, just redirect there (preserves path)
-  if (FRONTEND_ORIGIN) {
-    const url = new URL(req.originalUrl || '/', FRONTEND_ORIGIN);
-    return res.redirect(302, url.toString());
+// ---------- Static client (real UI) ----------
+/**
+ * We try to find a built frontend automatically.
+ * You can override with FRONTEND_DIR (absolute or relative to repo root).
+ */
+function resolveClientDir() {
+  const custom = process.env.FRONTEND_DIR;
+  const candidates = [
+    custom && path.resolve(custom),
+    path.resolve(__dirname, "../../web/dist"),
+    path.resolve(__dirname, "../../client/dist"),
+    path.resolve(__dirname, "../../frontend/dist"),
+    path.resolve(__dirname, "../../app/dist"),
+    path.resolve(__dirname, "../../dist"),
+    path.resolve(__dirname, "../public"), // fallback to server/public
+    path.resolve(__dirname, "../../public"),
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    if (fs.existsSync(p) && fs.existsSync(path.join(p, "index.html"))) {
+      return p;
+    }
+  }
+  return null;
+}
+
+const CLIENT_DIR = resolveClientDir();
+if (CLIENT_DIR) {
+  LOG.info(`[static] Serving client from: ${CLIENT_DIR}`);
+  app.use(
+    express.static(CLIENT_DIR, {
+      index: false,
+      maxAge: "1y",
+      setHeaders: (res, filePath) => {
+        // never cache index.html
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-store");
+        }
+      },
+    })
+  );
+
+  // Service worker & workbox helpers if present
+  for (const p of ["sw.js", "workbox-*.js", "manifest.webmanifest"]) {
+    app.get(`/${p}`, (req, res, next) => {
+      const file = path.join(CLIENT_DIR, req.path);
+      if (fs.existsSync(file)) return res.sendFile(file);
+      return next();
+    });
   }
 
-  // Serve client/dist if it exists
-  if (fs.existsSync(DIST_DIR) && fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
-    return res.sendFile(path.join(DIST_DIR, 'index.html'));
-  }
+  // App routes -> index.html
+  const SPA_ROUTES = [
+    "/",
+    "/c/new",
+    "/c/:id",
+    "/login",
+    "/settings",
+    "/chat",
+    "/app",
+    "/embed/*",
+  ];
 
-  // Serve public/index.html if present
-  if (fs.existsSync(PUBLIC_DIR) && fs.existsSync(path.join(PUBLIC_DIR, 'index.html'))) {
-    return res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
-  }
+  app.get(SPA_ROUTES, (_req, res) => {
+    res.sendFile(path.join(CLIENT_DIR, "index.html"));
+  });
 
-  // Fallback placeholder (what you’re seeing now)
-  const user = getUserFromRequest(req) || {
-    id: '68a9bb16aa1ca26aef9e9524',
-    email: 'demo1@no-mail.invalid',
-    role: 'user',
-  };
+  // Catch-all (but leave /api/* and /m/* to their handlers)
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/") || req.path.startsWith("/m/")) return next();
+    const indexPath = path.join(CLIENT_DIR, "index.html");
+    if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
+    return next();
+  });
+} else {
+  LOG.warn("[static] No client build found. Serving placeholder UI.");
 
-  res.set('Content-Type', 'text/html; charset=utf-8');
-  res.send(`<!doctype html>
+  // Minimal placeholder so the app is still usable
+  app.get("/", async (req, res) => {
+    // Try to show who we think you are
+    let user = { id: "anon", email: null, role: "guest" };
+    try {
+      const tok = req.cookies?.jwt || req.cookies?.token || req.cookies?.accessToken;
+      if (tok) {
+        const payload = jwt.verify(tok, JWT_SECRET);
+        user = {
+          id: payload.sub || "68a9bb16aa1ca26aef9e9524",
+          email: "demo1@no-mail.invalid",
+          role: "user",
+        };
+      }
+    } catch {}
+    const json = JSON.stringify(user, null, 2);
+    res
+      .status(200)
+      .send(`<!doctype html>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Own Chat</title>
 <style>
-  body { font-family: ui-sans-serif, system-ui; margin: 0; padding: 24px; }
-  h1 { font-size: 64px; line-height: 1; margin: 0 0 24px; }
-  .muted { color: #444; font-size: 22px; margin-bottom: 24px; }
-  pre { background: #f3f3f3; padding: 16px; border-radius: 12px; overflow:auto }
-  a { color: #0b57d0; text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans;
+       padding:24px;line-height:1.5}
+  pre{background:#f3f3f3;padding:16px;border-radius:12px;overflow:auto}
+  a{color:#2563eb;text-decoration-thickness:2px}
 </style>
 <h1>Own Chat</h1>
-<p class="muted">This is a minimal placeholder UI served by <code>api/server/index.js</code>.</p>
+<p>This is a minimal placeholder UI served by <code>api/server/index.js</code>.</p>
 <p><a href="/m/signed">Test: signed page</a></p>
-<pre>${JSON.stringify(user, null, 2)}</pre>
-`);
+<pre>${json}</pre>`);
+  });
 }
 
-// Static folders (served if present)
-if (fs.existsSync(DIST_DIR)) {
-  app.use(express.static(DIST_DIR, { maxAge: '1h' }));
-}
-if (fs.existsSync(PUBLIC_DIR)) {
-  app.use(express.static(PUBLIC_DIR, { maxAge: '1h' }));
-}
-
-// App routes that should show your frontend (or redirect)
-app.get('/', sendFrontend);
-app.get('/login', sendFrontend);
-app.get('/c/new', sendFrontend);
-
-// ---------- Error handling ----------
+// --------------- errors ---------------
 app.use((err, _req, res, _next) => {
-  log('error', 'Unhandled error:', err && err.message ? err.message : err);
-  res.status(500).send('internal_error');
+  LOG.error("Unhandled error:", err?.message || err);
+  res.status(500).send("server_error");
 });
 
-// ---------- Start ----------
-app.listen(PORT, () => {
-  log('info', `Server listening on :${PORT}`);
-});
+// --------------- start ---------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => LOG.info(`Server listening on :${PORT}`));
