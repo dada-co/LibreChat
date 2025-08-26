@@ -9,11 +9,13 @@ const chatV1 = require('./chatV1');
 const v2 = require('./v2');
 const chatV2 = require('./chatV2');
 
-router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
 
 router.use('/bind', bind);
+
+router.use(requireJwtAuth);
+
 router.post('/chat', postMessageViaAssistant);
 
 router.use('/v1/', v1);
