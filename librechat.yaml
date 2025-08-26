@@ -5,3 +5,5 @@ endpoints:
     type: openai
     baseURL: "https://api.openai.com/v1"
     apiKey: ${OPENAI_API_KEY}
+    headers:
+      OpenAI-Beta: assistants=v2
