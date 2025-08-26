@@ -1,6 +1,5 @@
 const express = require('express');
 const { AssistantBinding } = require('~/mongo/models/AssistantBinding');
-const { checkAdmin } = require('~/server/middleware');
 
 const router = express.Router();
 
@@ -9,11 +8,11 @@ const router = express.Router();
  *
  * @route POST /assistants/bind
  * @example curl -X POST https://librechat.example.com/api/assistants/bind \
- *  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+ *  -H "Authorization: Bearer <TOKEN>" \
  *  -H "Content-Type: application/json" \
  *  -d '{"libre_user_id":"6653f1a0e2...","assistant_id":"asst_abc123xyz"}'
  */
-router.post('/', checkAdmin, async (req, res) => {
+router.post('/', async (req, res) => {
   const { libre_user_id, assistant_id } = req.body || {};
 
   if (!libre_user_id || typeof libre_user_id !== 'string') {
