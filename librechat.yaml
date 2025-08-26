@@ -5,3 +5,11 @@ endpoints:
     type: openai
     baseURL: "https://api.openai.com/v1"
     apiKey: ${OPENAI_API_KEY}
+    assistants:
+      creator_helper:
+        id: asst_SMtOqkDo9B8VmNaHtBw0eomL
+
+users:
+  68adcd5a4330cdeebde7a959:
+    provider: openai
+    assistant: creator_helper
