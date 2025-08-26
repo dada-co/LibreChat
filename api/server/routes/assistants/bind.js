@@ -1,0 +1,37 @@
+const express = require('express');
+const { AssistantBinding } = require('~/mongo/models/AssistantBinding');
+const { checkAdmin } = require('~/server/middleware');
+
+const router = express.Router();
+
+/**
+ * Bind a Libre user to an OpenAI assistant.
+ *
+ * @route POST /assistants/bind
+ * @example curl -X POST https://librechat.example.com/api/assistants/bind \
+ *  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+ *  -H "Content-Type: application/json" \
+ *  -d '{"libre_user_id":"6653f1a0e2...","assistant_id":"asst_abc123xyz"}'
+ */
+router.post('/', checkAdmin, async (req, res) => {
+  const { libre_user_id, assistant_id } = req.body || {};
+
+  if (!libre_user_id || typeof libre_user_id !== 'string') {
+    return res.status(400).json({ error: 'missing_libre_user_id' });
+  }
+
+  if (!assistant_id || !assistant_id.startsWith('asst_')) {
+    return res.status(400).json({ error: 'invalid_assistant_id' });
+  }
+
+  await AssistantBinding.updateOne(
+    { user: libre_user_id },
+    { $set: { assistant_id }, $setOnInsert: { createdAt: new Date() } },
+    { upsert: true },
+  );
+
+  res.json({ ok: true });
+});
+
+module.exports = router;
+
