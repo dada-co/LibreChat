@@ -71,14 +71,21 @@ function checkVariables() {
  * Logs information or warning based on the API's availability and response.
  */
 async function checkHealth() {
+  const ragUrl = process.env.RAG_API_URL;
+
+  if (!ragUrl) {
+    logger.warn('RAG API URL is not defined; file uploads may be disabled.');
+    return;
+  }
+
   try {
-    const response = await fetch(`${process.env.RAG_API_URL}/health`);
+    const response = await fetch(`${ragUrl}/health`);
     if (response?.ok && response?.status === 200) {
-      logger.info(`RAG API is running and reachable at ${process.env.RAG_API_URL}.`);
+      logger.info(`RAG API is running and reachable at ${ragUrl}.`);
     }
-  } catch (error) {
+  } catch (_error) {
     logger.warn(
-      `RAG API is either not running or not reachable at ${process.env.RAG_API_URL}, you may experience errors with file uploads.`,
+      `RAG API is either not running or not reachable at ${ragUrl}, you may experience errors with file uploads.`,
     );
   }
 }
