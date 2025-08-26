@@ -7,3 +7,6 @@ endpoints:
     apiKey: ${OPENAI_API_KEY}
     headers:
       OpenAI-Beta: assistants=v2
+
+assistants:
+  privateAssistants: false
