@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { Model, DeleteResult, ClientSession } from 'mongoose';
 import type { IAclEntry } from '~/types';
+import logger from '~/config/winston';
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -286,11 +287,23 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
       ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
+    logger.debug('[ACL.findAccessibleResources] query', {
+      collection: AclEntry.collection.name,
+      resourceType,
+      requiredPermBit,
+      principalCount: principalsList.length,
+      principals: principalsList,
+    });
+
     const entries = await AclEntry.find({
       $or: principalsQuery,
       resourceType,
       permBits: { $bitsAllSet: requiredPermBit },
     }).distinct('resourceId');
+
+    logger.debug('[ACL.findAccessibleResources] found', {
+      count: entries.length,
+    });
 
     return entries;
   }
