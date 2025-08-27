@@ -1,14 +1,13 @@
 version: "1.0.0"
 
 endpoints:
-  - name: openai
-    type: openai
+  openAI:
     baseURL: "https://api.openai.com/v1"
-    apiKey: ${OPENAI_API_KEY}
-    headers:
-      OpenAI-Beta: assistants=v2
-    assistant:
-      id: "asst_SMtOqkDo9B8VmNaHtBw0eomL"
+    apiKey: "${OPENAI_API_KEY}"
 
-assistants:
-  privateAssistants: false
+  assistants:
+    # show only this Assistant in the UI
+    supportedIds:
+      - "asst_SMtOqkDo9B8VmNaHtBw0eomL"
+    # do NOT combine privateAssistants with supportedIds
+    privateAssistants: false
