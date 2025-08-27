@@ -455,16 +455,14 @@ export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
   );
 };
 
-export const listAgents = async (
-  params: a.AgentListParams,
-): Promise<a.AgentListResponse> => {
-  const res = await request.get(
+export const listAgents = async (params: a.AgentListParams): Promise<a.AgentListResponse> => {
+  const res = await request.get<a.AgentListResponse>(
     endpoints.agents({
       options: params,
     }),
   );
 
-  console.log('Agent data loaded:', res.agents);
+  console.log('Agent data loaded:', res.data);
   return res;
 };
 
@@ -496,7 +494,7 @@ export const getMarketplaceAgents = (params: {
   cursor?: string;
   promoted?: 0 | 1;
 }): Promise<a.AgentListResponse> => {
-  return request.get(
+  return request.get<a.AgentListResponse>(
     endpoints.agents({
       // path: 'marketplace',
       options: params,
