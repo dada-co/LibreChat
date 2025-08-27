@@ -455,12 +455,17 @@ export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
   );
 };
 
-export const listAgents = (params: a.AgentListParams): Promise<a.AgentListResponse> => {
-  return request.get(
+export const listAgents = async (
+  params: a.AgentListParams,
+): Promise<a.AgentListResponse> => {
+  const res = await request.get(
     endpoints.agents({
       options: params,
     }),
   );
+
+  console.log('Agent data loaded:', res.agents);
+  return res;
 };
 
 export const revertAgentVersion = ({
