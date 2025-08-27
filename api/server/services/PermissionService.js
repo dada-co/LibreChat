@@ -203,11 +203,30 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
 
     // Get all principals for the user (user + groups + public)
     const principalsList = await getUserPrincipals({ userId, role });
+    logger.debug('[PermissionService.findAccessibleResources] principals resolved', {
+      userId,
+      role,
+      resourceType,
+      requiredPermissions,
+      principalCount: principalsList.length,
+    });
 
     if (principalsList.length === 0) {
       return [];
     }
-    return await findAccessibleResourcesACL(principalsList, resourceType, requiredPermissions);
+
+    const resources = await findAccessibleResourcesACL(
+      principalsList,
+      resourceType,
+      requiredPermissions,
+    );
+    logger.debug('[PermissionService.findAccessibleResources] resources fetched', {
+      userId,
+      resourceType,
+      requiredPermissions,
+      count: resources.length,
+    });
+    return resources;
   } catch (error) {
     logger.error(`[PermissionService.findAccessibleResources] Error: ${error.message}`);
     // Re-throw validation errors
@@ -234,11 +253,20 @@ const findPubliclyAccessibleResources = async ({ resourceType, requiredPermissio
     validateResourceType(resourceType);
 
     // Find all public ACL entries where the public principal has at least the required permission bits
+    logger.debug('[PermissionService.findPubliclyAccessibleResources] query', {
+      resourceType,
+      requiredPermissions,
+    });
     const entries = await AclEntry.find({
       principalType: PrincipalType.PUBLIC,
       resourceType,
       permBits: { $bitsAllSet: requiredPermissions },
     }).distinct('resourceId');
+    logger.debug('[PermissionService.findPubliclyAccessibleResources] found', {
+      resourceType,
+      requiredPermissions,
+      count: entries.length,
+    });
 
     return entries;
   } catch (error) {
