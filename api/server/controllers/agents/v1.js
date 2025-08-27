@@ -448,6 +448,13 @@ const getListAgentsHandler = async (req, res) => {
       resourceType: ResourceType.AGENT,
       requiredPermissions: requiredPermission,
     });
+    logger.debug('[getListAgents] accessible resources', {
+      userId,
+      accessibleIds,
+      accessibleCount: accessibleIds.length,
+      filter,
+      requiredPermission,
+    });
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: ResourceType.AGENT,
       requiredPermissions: PermissionBits.VIEW,
@@ -458,6 +465,10 @@ const getListAgentsHandler = async (req, res) => {
       otherParams: filter,
       limit,
       after: cursor,
+    });
+    logger.debug('[getListAgents] fetched agents', {
+      userId,
+      returned: data?.data?.length ?? 0,
     });
     if (data?.data?.length) {
       data.data = data.data.map((agent) => {

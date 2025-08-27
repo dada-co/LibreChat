@@ -529,11 +529,19 @@ const getListAgentsByAccess = async ({
   limit = null,
   after = null,
 }) => {
+  logger.debug('[getListAgentsByAccess] invoked', {
+    collection: Agent.collection.collectionName,
+    accessibleCount: accessibleIds.length,
+    otherParams,
+    limit,
+    after,
+  });
   const isPaginated = limit !== null && limit !== undefined;
   const normalizedLimit = isPaginated ? Math.min(Math.max(1, parseInt(limit) || 20), 100) : null;
 
   // Build base query combining ACL accessible agents with other filters
   const baseQuery = { ...otherParams, _id: { $in: accessibleIds } };
+  logger.debug('[getListAgentsByAccess] baseQuery', baseQuery);
 
   // Add cursor condition
   if (after) {
@@ -562,6 +570,7 @@ const getListAgentsByAccess = async ({
       logger.warn('Invalid cursor:', error.message);
     }
   }
+  logger.debug('[getListAgentsByAccess] finalQuery', baseQuery);
 
   let query = Agent.find(baseQuery, {
     id: 1,
@@ -583,6 +592,9 @@ const getListAgentsByAccess = async ({
   }
 
   const agents = await query.lean();
+  logger.debug('[getListAgentsByAccess] agents retrieved', {
+    count: agents.length,
+  });
 
   const hasMore = isPaginated ? agents.length > normalizedLimit : false;
   const data = (isPaginated ? agents.slice(0, normalizedLimit) : agents).map((agent) => {
