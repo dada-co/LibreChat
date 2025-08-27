@@ -40,6 +40,10 @@ async function loadModels(req) {
 async function modelController(req, res) {
   try {
     const modelConfig = await loadModels(req);
+    logger.debug('[modelController] Returning models', {
+      userId: req.user?.id,
+      modelConfig,
+    });
     res.send(modelConfig);
   } catch (error) {
     logger.error('Error fetching models:', error);

@@ -1,12 +1,19 @@
 const { AssistantBinding } = require('~/mongo/models/AssistantBinding');
 const { ThreadBinding } = require('~/mongo/models/ThreadBinding');
 const { openai } = require('./openai');
+const { logger } = require('~/config');
 
 async function getAssistantIdForUser(libreUserId) {
+  logger.debug('[assistants] fetching assistant for user', { libreUserId });
   const row = await AssistantBinding.findOne({ user: libreUserId }).lean();
   if (!row || !row.assistant_id) {
+    logger.warn('[assistants] assistant not configured for user', { libreUserId });
     throw new Error('assistant_not_configured');
   }
+  logger.debug('[assistants] found assistant', {
+    libreUserId,
+    assistantId: row.assistant_id,
+  });
   return row.assistant_id;
 }
 

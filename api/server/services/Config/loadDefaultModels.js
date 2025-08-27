@@ -47,7 +47,7 @@ async function loadDefaultModels(req) {
         }),
       ]);
 
-    return {
+    const modelMap = {
       [EModelEndpoint.openAI]: openAI,
       [EModelEndpoint.google]: google,
       [EModelEndpoint.anthropic]: anthropic,
@@ -56,6 +56,9 @@ async function loadDefaultModels(req) {
       [EModelEndpoint.azureAssistants]: azureAssistants,
       [EModelEndpoint.bedrock]: bedrock,
     };
+
+    logger.debug('[loadDefaultModels] Loaded models', modelMap);
+    return modelMap;
   } catch (error) {
     logger.error('Error fetching default models:', error);
     throw new Error(`Failed to load default models: ${error.message}`);
