@@ -13,7 +13,7 @@ describe('validateImageRequest middleware', () => {
     };
     res = {
       status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
+      send: jest.fn(),
     };
     next = jest.fn();
     process.env.JWT_REFRESH_SECRET = 'test-secret';
@@ -32,14 +32,14 @@ describe('validateImageRequest middleware', () => {
   test('should return 401 if refresh token is not provided', () => {
     validateImageRequest(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+    expect(res.send).toHaveBeenCalledWith('Unauthorized');
   });
 
   test('should return 403 if refresh token is invalid', () => {
     req.headers.cookie = 'refreshToken=invalid-token';
     validateImageRequest(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Access Denied' });
+    expect(res.send).toHaveBeenCalledWith('Access Denied');
   });
 
   test('should return 403 if refresh token is expired', () => {
@@ -50,7 +50,7 @@ describe('validateImageRequest middleware', () => {
     req.headers.cookie = `refreshToken=${expiredToken}`;
     validateImageRequest(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Access Denied' });
+    expect(res.send).toHaveBeenCalledWith('Access Denied');
   });
 
   test('should call next() for valid image path', () => {
@@ -73,7 +73,7 @@ describe('validateImageRequest middleware', () => {
     req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/example.jpg'; // Different ObjectId
     validateImageRequest(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Access Denied' });
+    expect(res.send).toHaveBeenCalledWith('Access Denied');
   });
 
   test('should return 403 for invalid ObjectId format', () => {
@@ -85,7 +85,7 @@ describe('validateImageRequest middleware', () => {
     req.originalUrl = '/images/123/example.jpg'; // Invalid ObjectId
     validateImageRequest(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Access Denied' });
+    expect(res.send).toHaveBeenCalledWith('Access Denied');
   });
 
   // File traversal tests
@@ -107,7 +107,7 @@ describe('validateImageRequest middleware', () => {
       req.originalUrl = attempt;
       validateImageRequest(req, res, next);
       expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Access Denied' });
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
       jest.clearAllMocks();
     });
   });

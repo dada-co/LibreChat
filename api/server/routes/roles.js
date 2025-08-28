@@ -103,7 +103,7 @@ router.get('/:roleName', async (req, res) => {
     (req.user.role !== SystemRoles.ADMIN && roleName === SystemRoles.ADMIN) ||
     (req.user.role !== SystemRoles.ADMIN && !roleDefaults[roleName])
   ) {
-    return res.status(403).json({ error: 'Unauthorized' });
+    return res.status(403).send({ message: 'Unauthorized' });
   }
 
   try {
