@@ -10,7 +10,7 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const { logger } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
-const { isEnabled, ErrorController } = require('@librechat/api');
+const { isEnabled } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const validateImageRequest = require('./middleware/validateImageRequest');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
@@ -122,8 +122,15 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/*', (_req, res) =>
+    res.status(404).type('application/json').json({ error: 'Not Found' }),
+  );
 
-  app.use(ErrorController);
+  app.use((err, _req, res, _next) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.expose ? err.message : err.message || 'Internal Server Error';
+    res.status(status).type('application/json').json({ error: message });
+  });
 
   app.use((req, res) => {
     res.set({
