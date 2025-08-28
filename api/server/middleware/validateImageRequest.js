@@ -32,7 +32,7 @@ function validateImageRequest(req, res, next) {
   const refreshToken = req.headers.cookie ? cookies.parse(req.headers.cookie).refreshToken : null;
   if (!refreshToken) {
     logger.warn('[validateImageRequest] Refresh token not provided');
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).send('Unauthorized');
   }
 
   let payload;
@@ -40,18 +40,18 @@ function validateImageRequest(req, res, next) {
     payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
   } catch (err) {
     logger.warn('[validateImageRequest]', err);
-    return res.status(403).json({ error: 'Access Denied' });
+    return res.status(403).send('Access Denied');
   }
 
   if (!isValidObjectId(payload.id)) {
     logger.warn('[validateImageRequest] Invalid User ID');
-    return res.status(403).json({ error: 'Access Denied' });
+    return res.status(403).send('Access Denied');
   }
 
   const currentTimeInSeconds = Math.floor(Date.now() / 1000);
   if (payload.exp < currentTimeInSeconds) {
     logger.warn('[validateImageRequest] Refresh token expired');
-    return res.status(403).json({ error: 'Access Denied' });
+    return res.status(403).send('Access Denied');
   }
 
   const fullPath = decodeURIComponent(req.originalUrl);
@@ -62,7 +62,7 @@ function validateImageRequest(req, res, next) {
     next();
   } else {
     logger.warn('[validateImageRequest] Invalid image path');
-    res.status(403).json({ error: 'Access Denied' });
+    res.status(403).send('Access Denied');
   }
 }
 

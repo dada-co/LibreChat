@@ -9,7 +9,7 @@ const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   const code = 409;
   res
     .status(code)
-    .json({ messages: `An document with that ${field} already exists.`, fields: field });
+    .send({ messages: `An document with that ${field} already exists.`, fields: field });
 };
 
 const handleValidationError = (err: ValidationError, res: Response) => {
@@ -22,7 +22,7 @@ const handleValidationError = (err: ValidationError, res: Response) => {
       ? `${JSON.stringify(errorMessages.join(' '))}`
       : `${JSON.stringify(errorMessages)}`;
 
-  res.status(code).json({ messages, fields });
+  res.status(code).send({ messages, fields });
 };
 
 /** Type guard for ValidationError */
@@ -71,13 +71,13 @@ export const ErrorController = (
     }
 
     if (isCustomError(error) && error.statusCode && error.body) {
-      return res.status(error.statusCode).json(error.body);
+      return res.status(error.statusCode).send(error.body);
     }
 
     logger.error('ErrorController => error', err);
-    return res.status(500).json({ error: 'An unknown error occurred.' });
+    return res.status(500).send('An unknown error occurred.');
   } catch (processingError) {
     logger.error('ErrorController => processing error', processingError);
-    return res.status(500).json({ error: 'Processing error in ErrorController.' });
+    return res.status(500).send('Processing error in ErrorController.');
   }
 };
