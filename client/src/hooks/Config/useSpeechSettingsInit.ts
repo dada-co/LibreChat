@@ -43,7 +43,7 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
       const setter = setters[key as keyof typeof setters];
       if (setter) {
         logger.log(`Setting default speech setting: ${key} = ${value}`);
-        setter(value as any);
+        setter((prev: unknown) => (Object.is(prev, value) ? prev : (value as any)));
       }
     });
   }, [isAuthenticated, data, setters]);
