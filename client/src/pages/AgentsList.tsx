@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getJSON } from '@/lib/http-client';
+import { getJSON } from '../lib/http-client';
 
 export default function AgentsList() {
   const [agents, setAgents] = useState<any[]>([]);
