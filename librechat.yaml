@@ -4,6 +4,11 @@ endpoints:
   openAI:
     baseURL: "https://api.openai.com/v1"
     apiKey: "${OPENAI_API_KEY}"
+    modelOptions:
+      model: "gpt-4.1-mini"
+      useResponsesApi: true
+      text: true
+      truncation: auto
 
   assistants:
     # show only this Assistant in the UI
