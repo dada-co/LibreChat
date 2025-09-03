@@ -517,6 +517,17 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
   if (!_agentTools || _agentTools.length === 0) {
     return {};
   }
+
+  // 🔧 Pass OpenAI tools directly if they are already in the correct format
+  if (
+    agent.provider === 'openAI' &&
+    agent.tools.length > 0 &&
+    typeof agent.tools[0] === 'object' &&
+    agent.tools[0].type
+  ) {
+    return { tools: agent.tools }; // <-- bypass filtering
+  }
+
   /** @type {ReturnType<createOnSearchResults>} */
   let webSearchCallbacks;
   if (includesWebSearch) {
