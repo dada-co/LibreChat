@@ -89,6 +89,7 @@ const initializeAgent = async ({
     requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
     agentId: agent.id,
   });
+  agent.tool_resources = tool_resources;
 
   const provider = agent.provider;
   const { tools: structuredTools, toolContextMap } =
@@ -190,6 +191,7 @@ const initializeAgent = async ({
     attachments,
     resendFiles,
     toolContextMap,
+    tool_resources,
     useLegacyContent: !!options.useLegacyContent,
     maxContextTokens: Math.round((agentMaxContextTokens - maxTokens) * 0.9),
   };

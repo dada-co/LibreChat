@@ -28,7 +28,7 @@ export default function FileSearch({
 }) {
   const localize = useLocalize();
   const { setFilesLoading } = useChatContext();
-  const { watch } = useFormContext<AgentForm>();
+  const { watch, register } = useFormContext<AgentForm>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const [isPopoverActive, setIsPopoverActive] = useState(false);
@@ -134,6 +134,17 @@ export default function FileSearch({
       </div>
       <FileSearchCheckbox />
       <div className="flex flex-col gap-3">
+        <div className="flex w-full flex-col gap-1">
+          <label className="text-token-text-primary block font-medium">
+            {localize('com_agents_vector_store_ids')}
+          </label>
+          <input
+            type="text"
+            className="border-token-border-light bg-surface-secondary text-token-text-primary h-9 w-full rounded-lg px-3 py-2"
+            placeholder={localize('com_agents_vector_store_ids_placeholder')}
+            {...register('vector_store_ids')}
+          />
+        </div>
         {/* File Search (RAG API) Files */}
         <FileRow
           files={files}
