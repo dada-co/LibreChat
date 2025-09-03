@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch, { Headers } from 'node-fetch';
 import { logger } from '@librechat/data-schemas';
 import { GraphEvents, sleep } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
@@ -33,7 +33,40 @@ export function createFetch({
     if (directEndpoint) {
       url = reverseProxyUrl;
     }
-    logger.debug(`Making request to ${url}`);
+    const urlString = typeof url === 'string' ? url : url.toString();
+
+    if (urlString.includes('/responses')) {
+      const method = init?.method || 'GET';
+      const headers =
+        init?.headers instanceof Headers
+          ? Object.fromEntries(init.headers.entries())
+          : (init?.headers as Record<string, string>) || {};
+
+      if (headers.Authorization) {
+        headers.Authorization = '***';
+      }
+
+      if (headers['api-key']) {
+        headers['api-key'] = '***';
+      }
+
+      let body = init?.body as unknown as string | undefined;
+      if (body && typeof body !== 'string') {
+        try {
+          body = JSON.stringify(body);
+        } catch {
+          body = '[unserializable body]';
+        }
+      }
+
+      logger.info(`[Responses API] ${method} ${urlString}`);
+      logger.debug(`[Responses API Headers] ${JSON.stringify(headers)}`);
+      if (body) {
+        logger.debug(`[Responses API Body] ${body}`);
+      }
+    }
+
+    logger.debug(`Making request to ${urlString}`);
     if (typeof Bun !== 'undefined') {
       return await fetch(url, init);
     }
