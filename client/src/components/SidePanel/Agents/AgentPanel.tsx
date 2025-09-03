@@ -181,31 +181,41 @@ export default function AgentPanel() {
         recursion_limit,
         category,
         support_contact,
+        vector_store_ids,
       } = data;
 
       const model = _model ?? '';
       const provider =
         (typeof _provider === 'string' ? _provider : (_provider as StringOption).value) ?? '';
 
+      const vectorStoreIds = vector_store_ids
+        ?.split(',')
+        .map((id) => id.trim())
+        .filter((id) => id);
+
       if (agent_id) {
+        const updateData: any = {
+          name,
+          artifacts,
+          description,
+          instructions,
+          model,
+          tools,
+          provider,
+          model_parameters,
+          agent_ids,
+          end_after_tools,
+          hide_sequential_outputs,
+          recursion_limit,
+          category,
+          support_contact,
+        };
+        if (vectorStoreIds && vectorStoreIds.length) {
+          updateData['tool_resources.file_search.vector_store_ids'] = vectorStoreIds;
+        }
         update.mutate({
           agent_id,
-          data: {
-            name,
-            artifacts,
-            description,
-            instructions,
-            model,
-            tools,
-            provider,
-            model_parameters,
-            agent_ids,
-            end_after_tools,
-            hide_sequential_outputs,
-            recursion_limit,
-            category,
-            support_contact,
-          },
+          data: updateData,
         });
         return;
       }
@@ -223,7 +233,7 @@ export default function AgentPanel() {
         });
       }
 
-      create.mutate({
+      const createData: any = {
         name,
         artifacts,
         description,
@@ -238,7 +248,11 @@ export default function AgentPanel() {
         recursion_limit,
         category,
         support_contact,
-      });
+      };
+      if (vectorStoreIds && vectorStoreIds.length) {
+        createData.tool_resources = { file_search: { vector_store_ids: vectorStoreIds } };
+      }
+      create.mutate(createData);
     },
     [agent_id, create, update, showToast, localize],
   );

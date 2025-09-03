@@ -48,6 +48,8 @@
   "com_agents_file_context_info": "Files uploaded as \"Context\" are processed using OCR to extract text, which is then added to the Agent's instructions. Ideal for documents, images with text, or PDFs where you need the full text content of a file",
   "com_agents_file_search_disabled": "Agent must be created before uploading files for File Search.",
   "com_agents_file_search_info": "When enabled, the agent will be informed of the exact filenames listed below, allowing it to retrieve relevant context from these files.",
+  "com_agents_vector_store_ids": "Vector Store IDs",
+  "com_agents_vector_store_ids_placeholder": "Comma-separated vector store IDs",
   "com_agents_grid_announcement": "Showing {{count}} agents in {{category}} category",
   "com_agents_instructions_placeholder": "The system instructions that the agent uses",
   "com_agents_link_copied": "Link copied",

@@ -261,14 +261,19 @@ const loadTools = async ({
       continue;
     } else if (tool === Tools.file_search) {
       requestedTools[tool] = async () => {
-        const { files, toolContext } = await primeSearchFiles({
+        const { files, vector_store_ids, toolContext } = await primeSearchFiles({
           ...options,
           agentId: agent?.id,
         });
         if (toolContext) {
           toolContextMap[tool] = toolContext;
         }
-        return createFileSearchTool({ req: options.req, files, entity_id: agent?.id });
+        return createFileSearchTool({
+          req: options.req,
+          files,
+          vector_store_ids,
+          entity_id: agent?.id,
+        });
       };
       continue;
     } else if (tool === Tools.web_search) {

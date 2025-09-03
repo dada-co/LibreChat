@@ -37,5 +37,6 @@ export type AgentForm = {
   [AgentCapabilities.artifacts]?: ArtifactModes | string;
   recursion_limit?: number;
   support_contact?: SupportContact;
+  vector_store_ids?: string;
   category: string;
 } & TAgentCapabilities;
