@@ -15,15 +15,12 @@ const { getFiles } = require('~/models/File');
  * @param {string} [options.agentId] - The agent ID for file access control
  * @returns {Promise<{
  *   files: Array<{ file_id: string; filename: string }>,
- *   vector_store_ids: Array<string>,
  *   toolContext: string
  * }>}
  */
 const primeFiles = async (options) => {
   const { tool_resources, req, agentId } = options;
   const file_ids = tool_resources?.[EToolResources.file_search]?.file_ids ?? [];
-  const vector_store_ids =
-    tool_resources?.[EToolResources.file_search]?.vector_store_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.file_search]?.files ?? [];
 
@@ -65,7 +62,7 @@ const primeFiles = async (options) => {
     });
   }
 
-  return { files, vector_store_ids, toolContext };
+  return { files, toolContext };
 };
 
 /**
@@ -73,55 +70,70 @@ const primeFiles = async (options) => {
  * @param {Object} options
  * @param {ServerRequest} options.req
  * @param {Array<{ file_id: string; filename: string }>} options.files
- * @param {Array<string>} [options.vector_store_ids]
  * @param {string} [options.entity_id]
  * @returns
  */
-const createFileSearchTool = async ({ req, files, vector_store_ids = [], entity_id }) => {
+const createFileSearchTool = async ({ req, files, entity_id }) => {
   return tool(
     async ({ query }) => {
-      if (files.length === 0 && vector_store_ids.length === 0) {
-        return 'No files or vector stores to search. Instruct the user to add resources for the search.';
+      if (files.length === 0) {
+        return 'No files to search. Instruct the user to add files for the search.';
       }
       const jwtToken = generateShortLivedToken(req.user.id);
       if (!jwtToken) {
         return 'There was an error authenticating the file search request.';
       }
-      const body = {
-        query,
-        k: 5,
-        file_ids: files.map((file) => file.file_id),
-        vector_store_ids,
-      };
-      if (entity_id) {
+
+      /**
+       *
+       * @param {import('librechat-data-provider').TFile} file
+       * @returns {{ file_id: string, query: string, k: number, entity_id?: string }}
+       */
+      const createQueryBody = (file) => {
+        const body = {
+          file_id: file.file_id,
+          query,
+          k: 5,
+        };
+        if (!entity_id) {
+          return body;
+        }
         body.entity_id = entity_id;
-      }
-      logger.debug(`[${Tools.file_search}] RAG API /query body`, body);
+        logger.debug(`[${Tools.file_search}] RAG API /query body`, body);
+        return body;
+      };
 
-      const result = await axios
-        .post(`${process.env.RAG_API_URL}/query`, body, {
-          headers: {
-            Authorization: `Bearer ${jwtToken}`,
-            'Content-Type': 'application/json',
-          },
-        })
-        .catch((error) => {
-          logger.error('Error encountered in `file_search` while querying files:', error);
-          return null;
-        });
+      const queryPromises = files.map((file) =>
+        axios
+          .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file), {
+            headers: {
+              Authorization: `Bearer ${jwtToken}`,
+              'Content-Type': 'application/json',
+            },
+          })
+          .catch((error) => {
+            logger.error('Error encountered in `file_search` while querying file:', error);
+            return null;
+          }),
+      );
 
-      if (!result || !Array.isArray(result.data) || result.data.length === 0) {
+      const results = await Promise.all(queryPromises);
+      const validResults = results.filter((result) => result !== null);
+
+      if (validResults.length === 0) {
         return 'No results found or errors occurred while searching the files.';
       }
 
-      const formattedResults = result.data
-        .map(([docInfo, distance]) => ({
-          filename: docInfo.metadata.source.split('/').pop(),
-          content: docInfo.page_content,
-          distance,
-          file_id: docInfo.metadata.file_id || docInfo.file_id,
-          page: docInfo.metadata.page || null,
-        }))
+      const formattedResults = validResults
+        .flatMap((result, fileIndex) =>
+          result.data.map(([docInfo, distance]) => ({
+            filename: docInfo.metadata.source.split('/').pop(),
+            content: docInfo.page_content,
+            distance,
+            file_id: files[fileIndex]?.file_id,
+            page: docInfo.metadata.page || null,
+          })),
+        )
         // TODO: results should be sorted by relevance, not distance
         .sort((a, b) => a.distance - b.distance)
         // TODO: make this configurable

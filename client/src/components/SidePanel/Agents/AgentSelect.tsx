@@ -83,11 +83,6 @@ export default function AgentSelect({
         support_contact: fullAgent.support_contact,
       };
 
-      const vectorIds = fullAgent.tool_resources?.file_search?.vector_store_ids;
-      if (Array.isArray(vectorIds) && vectorIds.length > 0) {
-        formValues.vector_store_ids = vectorIds.join(', ');
-      }
-
       Object.entries(fullAgent).forEach(([name, value]) => {
         if (name === 'model_parameters') {
           formValues[name] = value;

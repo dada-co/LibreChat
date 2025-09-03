@@ -248,7 +248,6 @@ export type AgentCreateParams = {
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
-  tool_resources?: ToolResources;
 } & Pick<
   Agent,
   | 'agent_ids'
