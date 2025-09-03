@@ -181,7 +181,7 @@ export const primeResources = async ({
      * The agent's tool resources object that will be updated with categorized files
      * Initialized from input parameter or empty object if not provided
      */
-    const tool_resources = structuredClone(_tool_resources ?? {});
+    const tool_resources = _tool_resources ?? {};
 
     // Track existing files in tool_resources to prevent duplicates within resources
     for (const [resourceType, resource] of Object.entries(tool_resources)) {
