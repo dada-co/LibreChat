@@ -9,6 +9,7 @@ import {
   RequestPasswordReset,
 } from '~/components/Auth';
 import AgentMarketplace from '~/components/Agents/Marketplace';
+import AgentsList from '~/pages/AgentsList';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
@@ -105,6 +106,10 @@ export const router = createBrowserRouter([
           {
             path: 'search',
             element: <Search />,
+          },
+          {
+            path: 'my-agents',
+            element: <AgentsList />,
           },
           {
             path: 'agents',
