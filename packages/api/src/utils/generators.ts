@@ -63,6 +63,23 @@ export function createFetch({
       logger.debug(`[Responses API Headers] ${JSON.stringify(headers)}`);
       if (body) {
         logger.debug(`[Responses API Body] ${body}`);
+        try {
+          const parsed = JSON.parse(body);
+          if (Array.isArray(parsed?.tools)) {
+            for (const tool of parsed.tools) {
+              const name =
+                tool?.function?.name || tool?.name || tool?.type || 'unknown';
+              const params = tool?.function?.parameters ?? tool?.parameters ?? {};
+              logger.debug(
+                `[Responses API Tool] ${name} ${JSON.stringify(params)}`,
+              );
+            }
+          }
+        } catch (err) {
+          logger.warn(
+            `[Responses API Tool Logging Error] ${(err as Error).message}`,
+          );
+        }
       }
     }
 
