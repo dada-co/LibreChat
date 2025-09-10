@@ -476,7 +476,13 @@ async function processRequiredActions(client, requiredActions) {
 async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
-  } else if (agent.tools && agent.tools.length === 1 && agent.tools[0] === AgentCapabilities.ocr) {
+  } else if (
+    agent.tools &&
+    agent.tools.length === 1 &&
+    (typeof agent.tools[0] === 'string'
+      ? agent.tools[0]
+      : agent.tools[0].type) === AgentCapabilities.ocr
+  ) {
     return {};
   }
 
@@ -501,14 +507,15 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
-    if (tool === Tools.file_search) {
+    const toolName = typeof tool === 'string' ? tool : tool.type;
+    if (toolName === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
-    } else if (tool === Tools.execute_code) {
+    } else if (toolName === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code);
-    } else if (tool === Tools.web_search) {
+    } else if (toolName === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;
-    } else if (!areToolsEnabled && !tool.includes(actionDelimiter)) {
+    } else if (!areToolsEnabled && !toolName.includes(actionDelimiter)) {
       return false;
     }
     return true;

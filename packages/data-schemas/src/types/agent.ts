@@ -20,7 +20,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   artifacts?: string;
   access_level?: number;
   recursion_limit?: number;
-  tools?: string[];
+  tools?: Array<string | { type: string; [key: string]: unknown }>;
   tool_kwargs?: Array<unknown>;
   actions?: string[];
   author: Types.ObjectId;

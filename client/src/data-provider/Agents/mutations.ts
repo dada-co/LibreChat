@@ -298,7 +298,10 @@ export const useDeleteAgentAction = (
                 if (agent.id === variables.agent_id) {
                   return {
                     ...agent,
-                    tools: agent.tools?.filter((tool) => !tool.includes(domain ?? '')),
+                    tools: agent.tools?.filter((tool) => {
+                      const toolName = typeof tool === 'string' ? tool : tool.type;
+                      return !toolName.includes(domain ?? '');
+                    }),
                   };
                 }
                 return agent;
@@ -314,7 +317,10 @@ export const useDeleteAgentAction = (
 
         return {
           ...prev,
-          tools: prev.tools?.filter((tool) => !tool.includes(domain ?? '')),
+          tools: prev.tools?.filter((tool) => {
+            const toolName = typeof tool === 'string' ? tool : tool.type;
+            return !toolName.includes(domain ?? '');
+          }),
         };
       };
       queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updaterFn);

@@ -43,7 +43,7 @@ const agentSchema = new Schema<IAgent>(
       type: Number,
     },
     tools: {
-      type: [String],
+      type: [Schema.Types.Mixed],
       default: undefined,
     },
     tool_kwargs: {
@@ -81,7 +81,7 @@ const agentSchema = new Schema<IAgent>(
     },
     tool_resources: {
       type: Schema.Types.Mixed,
-      default: {},
+      default: undefined,
     },
     projectIds: {
       type: [Schema.Types.ObjectId],
