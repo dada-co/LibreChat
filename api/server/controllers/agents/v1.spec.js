@@ -151,6 +151,23 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.author.toString()).toBe(mockReq.user.id);
     });
 
+    test('should create agent with file_search tool and vector stores inline', async () => {
+      const validData = {
+        name: 'FS Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [{ type: 'file_search', vector_store_ids: ['vs1'] }],
+      };
+
+      mockReq.body = validData;
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.tools).toContain('file_search');
+      expect(createdAgent.tool_resources.file_search.vector_store_ids).toEqual(['vs1']);
+    });
+
     test('should reject creation with unauthorized fields (mass assignment protection)', async () => {
       const maliciousData = {
         // Required fields
@@ -433,6 +450,20 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
       expect(agentInDb.isCollaborative).toBe(true);
+    });
+
+    test('should update agent with file_search tool and vector stores inline', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        tools: [{ type: 'file_search', vector_store_ids: ['vs2'] }],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.tools).toContain('file_search');
+      expect(updatedAgent.tool_resources.file_search.vector_store_ids).toEqual(['vs2']);
     });
 
     test('should reject update with unauthorized fields (mass assignment protection)', async () => {
