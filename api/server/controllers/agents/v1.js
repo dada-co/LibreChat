@@ -64,17 +64,29 @@ const createAgentHandler = async (req, res) => {
     agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
     agentData.tools = [];
-
     const availableTools = await getCachedTools({ includeGlobal: true });
+    const toolResources = agentData.tool_resources || {};
     for (const tool of tools) {
-      if (availableTools[tool]) {
-        agentData.tools.push(tool);
+      let toolName;
+      if (typeof tool === 'string') {
+        toolName = tool;
+      } else if (tool && typeof tool === 'object') {
+        toolName = tool.type;
+        if (toolName === Tools.file_search && Array.isArray(tool.vector_store_ids)) {
+          toolResources[EToolResources.file_search] = {
+            ...(toolResources[EToolResources.file_search] || {}),
+            vector_store_ids: tool.vector_store_ids,
+          };
+        }
       }
-
-      if (systemTools[tool]) {
-        agentData.tools.push(tool);
+      if (!toolName) {
+        continue;
+      }
+      if (availableTools[toolName] || systemTools[toolName]) {
+        agentData.tools.push(toolName);
       }
     }
+    agentData.tool_resources = Object.keys(toolResources).length ? toolResources : agentData.tool_resources;
 
     const agent = await createAgent(agentData);
 
@@ -204,6 +216,35 @@ const updateAgentHandler = async (req, res) => {
     const id = req.params.id;
     const validatedData = agentUpdateSchema.parse(req.body);
     const { _id, ...updateData } = removeNullishValues(validatedData);
+    if (updateData.tools) {
+      const availableTools = await getCachedTools({ includeGlobal: true });
+      const toolResources = updateData.tool_resources || {};
+      const parsedTools = [];
+      for (const tool of updateData.tools) {
+        let toolName;
+        if (typeof tool === 'string') {
+          toolName = tool;
+        } else if (tool && typeof tool === 'object') {
+          toolName = tool.type;
+          if (toolName === Tools.file_search && Array.isArray(tool.vector_store_ids)) {
+            toolResources[EToolResources.file_search] = {
+              ...(toolResources[EToolResources.file_search] || {}),
+              vector_store_ids: tool.vector_store_ids,
+            };
+          }
+        }
+        if (!toolName) {
+          continue;
+        }
+        if (availableTools[toolName] || systemTools[toolName]) {
+          parsedTools.push(toolName);
+        }
+      }
+      updateData.tools = parsedTools;
+      updateData.tool_resources = Object.keys(toolResources).length
+        ? toolResources
+        : updateData.tool_resources;
+    }
     const existingAgent = await getAgent({ id });
 
     if (!existingAgent) {

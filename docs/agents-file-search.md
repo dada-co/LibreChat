@@ -20,12 +20,10 @@ curl -X POST "http://localhost:3080/api/agents" \
     "name": "ronit kfir",
     "provider": "openAI",
     "model": "o4-mini",
-    "tools": ["file_search"],
-    "tool_resources": {
-      "file_search": {
-        "vector_store_ids": ["vs_68bf32debaa881918a27f77e54c24d95"]
-      }
-    }
+    "tools": [{
+      "type": "file_search",
+      "vector_store_ids": ["vs_68bf32debaa881918a27f77e54c24d95"]
+    }]
   }'
 ```
 
@@ -36,12 +34,10 @@ curl -X PATCH "http://localhost:3080/api/agents/{agent_id}" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "tools": ["file_search"],
-    "tool_resources": {
-      "file_search": {
-        "vector_store_ids": ["vs_68bf32debaa881918a27f77e54c24d95"]
-      }
-    }
+    "tools": [{
+      "type": "file_search",
+      "vector_store_ids": ["vs_68bf32debaa881918a27f77e54c24d95"]
+    }]
   }'
 ```
 
@@ -53,17 +49,16 @@ curl -X PATCH "http://localhost:3080/api/agents/{agent_id}" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "tool_resources": {
-      "file_search": {
-        "vector_store_ids": ["vs_existing", "vs_new"]
-      }
-    }
+    "tools": [{
+      "type": "file_search",
+      "vector_store_ids": ["vs_existing", "vs_new"]
+    }]
   }'
 ```
 
 ### Request body fields
-* `tools` – array of tool names (`["file_search"]`).
-* `tool_resources.file_search.vector_store_ids` – IDs of vector stores linked to the File Search tool.
+* `tools` – array of tool objects with a `type` property.
+* `vector_store_ids` – IDs of vector stores linked to the `file_search` tool.
 
-The schema for `file_search` resources is defined in the API and includes the optional `vector_store_ids` array.
+The schema for `file_search` tools includes an optional `vector_store_ids` array.
 

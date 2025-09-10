@@ -38,6 +38,17 @@ export const agentSupportContactSchema = z
   })
   .optional();
 
+/** Tool schema allowing string names or objects with optional config */
+export const agentToolSchema = z.union([
+  z.string(),
+  z
+    .object({
+      type: z.string(),
+      vector_store_ids: z.array(z.string()).optional(),
+    })
+    .passthrough(),
+]);
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -45,7 +56,7 @@ export const agentBaseSchema = z.object({
   instructions: z.string().nullable().optional(),
   avatar: agentAvatarSchema.nullable().optional(),
   model_parameters: z.record(z.unknown()).optional(),
-  tools: z.array(z.string()).optional(),
+  tools: z.array(agentToolSchema).optional(),
   agent_ids: z.array(z.string()).optional(),
   end_after_tools: z.boolean().optional(),
   hide_sequential_outputs: z.boolean().optional(),
@@ -61,13 +72,14 @@ export const agentBaseSchema = z.object({
 export const agentCreateSchema = agentBaseSchema.extend({
   provider: z.string(),
   model: z.string().nullable(),
-  tools: z.array(z.string()).optional().default([]),
+  tools: z.array(agentToolSchema).optional().default([]),
 });
 
 /** Update schema extends base with all fields optional and additional update-only fields */
 export const agentUpdateSchema = agentBaseSchema.extend({
   provider: z.string().optional(),
   model: z.string().nullable().optional(),
+  tools: z.array(agentToolSchema).optional(),
   projectIds: z.array(z.string()).optional(),
   removeProjectIds: z.array(z.string()).optional(),
   isCollaborative: z.boolean().optional(),

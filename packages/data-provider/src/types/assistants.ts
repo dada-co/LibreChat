@@ -244,7 +244,7 @@ export type AgentCreateParams = {
   avatar?: AgentAvatar | null;
   file_ids?: string[];
   instructions?: string | null;
-  tools?: Array<FunctionTool | string>;
+  tools?: Array<FunctionTool | { type: string; [key: string]: unknown } | string>;
   provider: AgentProvider;
   model: string | null;
   model_parameters: AgentModelParameters;
@@ -265,7 +265,7 @@ export type AgentUpdateParams = {
   avatar?: AgentAvatar | null;
   file_ids?: string[];
   instructions?: string | null;
-  tools?: Array<FunctionTool | string>;
+  tools?: Array<FunctionTool | { type: string; [key: string]: unknown } | string>;
   tool_resources?: ToolResources;
   provider?: AgentProvider;
   model?: string | null;
