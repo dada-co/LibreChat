@@ -65,28 +65,23 @@ const createAgentHandler = async (req, res) => {
     agentData.author = userId;
     agentData.tools = [];
     const availableTools = await getCachedTools({ includeGlobal: true });
-    const toolResources = agentData.tool_resources || {};
     for (const tool of tools) {
       let toolName;
+      let toolObj;
       if (typeof tool === 'string') {
         toolName = tool;
+        toolObj = { type: tool };
       } else if (tool && typeof tool === 'object') {
         toolName = tool.type;
-        if (toolName === Tools.file_search && Array.isArray(tool.vector_store_ids)) {
-          toolResources[EToolResources.file_search] = {
-            ...(toolResources[EToolResources.file_search] || {}),
-            vector_store_ids: tool.vector_store_ids,
-          };
-        }
+        toolObj = tool;
       }
       if (!toolName) {
         continue;
       }
       if (availableTools[toolName] || systemTools[toolName]) {
-        agentData.tools.push(toolName);
+        agentData.tools.push(toolObj);
       }
     }
-    agentData.tool_resources = Object.keys(toolResources).length ? toolResources : agentData.tool_resources;
 
     const agent = await createAgent(agentData);
 
@@ -218,32 +213,25 @@ const updateAgentHandler = async (req, res) => {
     const { _id, ...updateData } = removeNullishValues(validatedData);
     if (updateData.tools) {
       const availableTools = await getCachedTools({ includeGlobal: true });
-      const toolResources = updateData.tool_resources || {};
       const parsedTools = [];
       for (const tool of updateData.tools) {
         let toolName;
+        let toolObj;
         if (typeof tool === 'string') {
           toolName = tool;
+          toolObj = { type: tool };
         } else if (tool && typeof tool === 'object') {
           toolName = tool.type;
-          if (toolName === Tools.file_search && Array.isArray(tool.vector_store_ids)) {
-            toolResources[EToolResources.file_search] = {
-              ...(toolResources[EToolResources.file_search] || {}),
-              vector_store_ids: tool.vector_store_ids,
-            };
-          }
+          toolObj = tool;
         }
         if (!toolName) {
           continue;
         }
         if (availableTools[toolName] || systemTools[toolName]) {
-          parsedTools.push(toolName);
+          parsedTools.push(toolObj);
         }
       }
       updateData.tools = parsedTools;
-      updateData.tool_resources = Object.keys(toolResources).length
-        ? toolResources
-        : updateData.tool_resources;
     }
     const existingAgent = await getAgent({ id });
 

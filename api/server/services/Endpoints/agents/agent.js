@@ -69,8 +69,9 @@ const initializeAgent = async ({
     /** @type {Set<EToolResources>} */
     const toolResourceSet = new Set();
     for (const tool of agent.tools) {
-      if (EToolResources[tool]) {
-        toolResourceSet.add(EToolResources[tool]);
+      const toolName = typeof tool === 'string' ? tool : tool.type;
+      if (EToolResources[toolName]) {
+        toolResourceSet.add(EToolResources[toolName]);
       }
     }
     const toolFiles = await getToolFilesByIds(fileIds, toolResourceSet);

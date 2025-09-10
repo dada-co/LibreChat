@@ -132,8 +132,15 @@ router.post(
       const { tools: _tools = [] } = agent;
 
       const tools = _tools
-        .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
-        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
+        .filter((tool) => {
+          const toolName = typeof tool === 'string' ? tool : tool.type;
+          return !(toolName && (toolName.includes(domain) || toolName.includes(action_id)));
+        })
+        .concat(
+          functions.map(
+            (tool) => `${tool.function.name}${actionDelimiter}${domain}`,
+          ),
+        );
 
       // Force version update since actions are changing
       const updatedAgent = await updateAgent(
@@ -212,7 +219,10 @@ router.delete(
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
+      const updatedTools = tools.filter((tool) => {
+        const toolName = typeof tool === 'string' ? tool : tool.type;
+        return !(toolName && toolName.includes(domain));
+      });
 
       // Force version update since actions are being removed
       await updateAgent(

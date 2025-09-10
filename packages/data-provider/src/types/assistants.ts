@@ -214,7 +214,7 @@ export type Agent = {
   avatar: AgentAvatar | null;
   instructions: string | null;
   additional_instructions?: string | null;
-  tools?: string[];
+  tools?: Array<FunctionTool | { type: string; [key: string]: unknown } | string>;
   projectIds?: string[];
   tool_kwargs?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
