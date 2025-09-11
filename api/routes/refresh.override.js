@@ -38,7 +38,7 @@ router.post('/api/auth/refresh', async (req, res) => {
     const userId = payload.sub;
 
     const User = mongoose.model('User');
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).select('-password -__v -totpSecret -backupCodes');
     if (!user) return res.status(401).json({ ok: false, error: 'user-missing' });
 
     const access = jwt.sign(
@@ -62,7 +62,7 @@ router.post('/api/auth/refresh', async (req, res) => {
     });
 
     setAuthCookies(res, access, refresh);
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, token: access, user });
   } catch (e) {
     clearAuthCookies(res);
     return res.status(401).json({ ok: false, error: 'invalid-refresh' });
