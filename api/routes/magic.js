@@ -5,13 +5,11 @@ const mongoose = require('mongoose');
 
 const router = express.Router();
 
-const MAGIC_SECRET =
-  process.env.MAGIC_LINK_SECRET ||
-  process.env.JWT_SECRET;
+const MAGIC_SECRET = process.env.MAGIC_LINK_SECRET || process.env.JWT_SECRET;
 
 // ----- cookie helpers -----
-const ONE_HOUR_MS  = 60 * 60 * 1000;
-const THIRTY_D_MS  = 30 * 24 * 60 * 60 * 1000;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const THIRTY_D_MS = 30 * 24 * 60 * 60 * 1000;
 
 // NOTE: Heroku/Chrome require SameSite=None with Secure for cross-site redirects
 const BASE_COOKIE = {
@@ -23,12 +21,12 @@ const BASE_COOKIE = {
 
 function setAuthCookies(res, access, refresh) {
   // canonical names
-  res.cookie('jwt', access,           { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
+  res.cookie('jwt', access, { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
   res.cookie('refreshToken', refresh, { ...BASE_COOKIE, maxAge: THIRTY_D_MS });
 
   // extra names for wider compat with some middlewares
-  res.cookie('token', access,         { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
-  res.cookie('accessToken', access,   { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
+  res.cookie('token', access, { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
+  res.cookie('accessToken', access, { ...BASE_COOKIE, maxAge: ONE_HOUR_MS });
 }
 
 function clearAuthCookies(res) {
@@ -47,7 +45,14 @@ router.get('/m/signed', (req, res) => {
   try {
     const d = jwt.decode(jwtCookie) || {};
     uid = d.sub || d.id || d._id || '';
-  } catch (_) {}
+  } catch (_) {
+    /* noop */
+  }
+
+  console.log('[magic] GET /m/signed', {
+    jwtPresent: !!jwtCookie,
+    cookieHeader: req.headers.cookie || null,
+  });
 
   res.set('Cache-Control', 'no-store');
 
@@ -66,6 +71,13 @@ router.get('/m/signed', (req, res) => {
     const token = ${JSON.stringify(jwtCookie || '')};
     const userId = ${JSON.stringify(uid || '')};
 
+    console.log('[magic] handshake start', {
+      tokenPresent: !!token,
+      userId,
+      cookieEnabled: navigator.cookieEnabled,
+      cookies: document.cookie,
+    });
+
     try {
       if (token) {
         localStorage.setItem('token', token);
@@ -74,18 +86,24 @@ router.get('/m/signed', (req, res) => {
         localStorage.setItem('loggedIn', '1');
         if (userId) localStorage.setItem('userId', userId);
         try { localStorage.setItem('auth', JSON.stringify({ token, userId })); } catch {}
+        console.log('[magic] stored token in localStorage');
       }
-    } catch {}
+    } catch (err) {
+      console.error('[magic] localStorage error', err);
+    }
 
     try {
       // Bust cache and accept 200 or 304
       const r = await fetch('/api/user?fresh=' + Date.now(), { credentials: 'include', cache: 'no-store' });
+      console.log('[magic] /api/user response', r.status, r.statusText);
       if (r.status !== 200 && r.status !== 304) throw new Error('unauthorized:' + r.status);
     } catch (e) {
+      console.error('[magic] /api/user request failed', e);
       location.replace('/login?from=magic&err=' + encodeURIComponent(e.message || 'unknown'));
       return;
     }
 
+    console.log('[magic] success, redirecting to home');
     // All good → go home (cache-busting param to defeat SW)
     location.replace('/?from=magic&cb=' + Date.now());
   })();
@@ -133,17 +151,15 @@ router.get('/m/:token', async (req, res) => {
         provider: 'magic',
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '1h' },
     );
 
     const refreshSecret =
       process.env.REFRESH_TOKEN_SECRET || process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
 
-    const refresh = jwt.sign(
-      { sub: userId },
-      refreshSecret,
-      { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '30d' }
-    );
+    const refresh = jwt.sign({ sub: userId }, refreshSecret, {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '30d',
+    });
 
     console.log('[magic] signed tokens', {
       access: access.slice(0, 30) + '…' + access.slice(-6),
@@ -156,7 +172,7 @@ router.get('/m/:token', async (req, res) => {
       const hash = await bcrypt.hash(refresh, 10);
       const max = 5;
       const list = Array.isArray(user.refreshToken) ? user.refreshToken : [];
-      const trimmed = (list.concat(hash)).slice(-max);
+      const trimmed = list.concat(hash).slice(-max);
       if (trimmed.length !== list.length) {
         await User.updateOne({ _id: userId }, { $set: { refreshToken: trimmed } });
       }
@@ -165,10 +181,16 @@ router.get('/m/:token', async (req, res) => {
         listLenAfter: trimmed.length,
         hash: hash.slice(0, 12) + '…',
       });
-    } catch {}
+    } catch {
+      /* noop */
+    }
 
     setAuthCookies(res, access, refresh);
-    console.log('[magic] set cookies', { cookieNames: ['jwt','token','accessToken','refreshToken'], sameSite: 'None', secure: true });
+    console.log('[magic] set cookies', {
+      cookieNames: ['jwt', 'token', 'accessToken', 'refreshToken'],
+      sameSite: 'None',
+      secure: true,
+    });
 
     // finish on the handshake page (writes localStorage + verifies /api/user)
     return res.redirect('/m/signed');
