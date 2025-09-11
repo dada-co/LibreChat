@@ -25,7 +25,8 @@ const routes = require('./routes');
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 const adminUsers = require('../routes/admin.users');
 const magicRoutes = require('../routes/magic');
-  
+const refreshOverride = require('../routes/refresh.override');
+
 // Allow PORT=0 to be used for automatic free port assignment
 const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || 'localhost';
@@ -94,6 +95,7 @@ const startServer = async () => {
   app.use('/oauth', routes.oauth);
   /* API Endpoints */
   app.use('/api/admin', adminUsers);
+  app.use(refreshOverride);
   app.use('/api/auth', routes.auth);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
