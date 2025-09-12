@@ -103,9 +103,10 @@ router.get('/m/signed', (req, res) => {
       return;
     }
 
-    console.log('[magic] success, redirecting to home');
-    // All good → go home (cache-busting param to defeat SW)
-    location.replace('/?from=magic&cb=' + Date.now());
+    const params = new URLSearchParams(location.search);
+    const next = params.get('next') || '/?from=magic&cb=' + Date.now();
+    console.log('[magic] success, redirecting to', next);
+    location.replace(next);
   })();
   </script>
 </body>
