@@ -194,7 +194,9 @@ router.get('/m/:token', async (req, res) => {
     });
 
     // finish on the handshake page (writes localStorage + verifies /api/user)
-    return res.redirect('/m/signed');
+    const qsIndex = req.originalUrl.indexOf('?');
+    const qs = qsIndex > -1 ? req.originalUrl.slice(qsIndex) : '';
+    return res.redirect('/m/signed' + qs);
   } catch (e) {
     console.error('[magic] error', e && (e.stack || e.message || e));
     clearAuthCookies(res);

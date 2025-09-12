@@ -10,3 +10,5 @@ endpoints:
       text: true
       truncation: auto
 
+balance:
+  enabled: false
