@@ -10,10 +10,3 @@ endpoints:
       text: true
       truncation: auto
 
-  assistants:
-    # show only this Assistant in the UI
-    supportedIds:
-      - "asst_SMtOqkDo9B8VmNaHtBw0eomL"
-    # do NOT combine privateAssistants with supportedIds
-    privateAssistants: false
-    disableBuilder: false
