@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
@@ -17,6 +17,18 @@ import store from '~/store';
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user } = useAuthRedirect();
+  const location = useLocation();
+
+  useEffect(() => {
+    logger.debug('navigation', 'ChatRoute location', {
+      pathname: location.pathname,
+      search: location.search,
+    });
+    console.log('ChatRoute location', {
+      pathname: location.pathname,
+      search: location.search,
+    });
+  }, [location]);
 
   const setIsTemporary = useRecoilCallback(
     ({ set }) =>
@@ -58,6 +70,12 @@ export default function ChatRoute() {
    *  Adjusting this may have unintended consequences on the conversation state.
    */
   useEffect(() => {
+    logger.debug('conversation', 'New conversation effect triggered', {
+      search: window.location.search,
+    });
+    console.log('ChatRoute new convo effect', {
+      search: window.location.search,
+    });
     const shouldSetConvo =
       (startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial) ?? false;
     /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */

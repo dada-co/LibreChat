@@ -12,7 +12,7 @@ import {
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import { useChatContext } from '~/Providers';
-import { renderAgentAvatar } from '~/utils';
+import { renderAgentAvatar, logger } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface SupportContact {
@@ -79,6 +79,8 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
   const handleCopyLink = () => {
     const baseUrl = new URL(window.location.origin);
     const chatUrl = `${baseUrl.origin}/c/new?agent_id=${agent.id}`;
+    logger.debug('agents', 'Generated agent chat URL', { chatUrl });
+    console.log('AgentDetail copy link', { chatUrl });
     navigator.clipboard
       .writeText(chatUrl)
       .then(() => {
