@@ -20,11 +20,20 @@ const logFetch = async (url, init = {}) => {
     }
 
     let body = init.body;
+    let tools;
     if (body && typeof body !== 'string') {
       try {
+        tools = body?.tools;
         body = JSON.stringify(body);
       } catch {
         body = '[unserializable body]';
+      }
+    } else if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        tools = parsed?.tools;
+      } catch {
+        /* ignore parse errors */
       }
     }
 
@@ -32,6 +41,9 @@ const logFetch = async (url, init = {}) => {
     logger.debug(`[Responses API Headers] ${JSON.stringify(headers)}`);
     if (body) {
       logger.debug(`[Responses API Body] ${body}`);
+    }
+    if (tools) {
+      logger.debug(`[Responses API Tools] ${JSON.stringify(tools)}`);
     }
   }
   return fetch(url, init);
