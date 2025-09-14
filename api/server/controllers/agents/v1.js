@@ -44,6 +44,7 @@ const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
   [Tools.web_search]: true,
+  mcp: true,
 };
 
 /**
