@@ -578,6 +578,7 @@ const getListAgentsByAccess = async ({
     name: 1,
     avatar: 1,
     author: 1,
+    conversation_starters: 1,
     projectIds: 1,
     description: 1,
     updatedAt: 1,
