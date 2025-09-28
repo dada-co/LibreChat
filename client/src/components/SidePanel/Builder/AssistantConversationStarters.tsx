@@ -70,7 +70,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
           <input
             ref={(el) => (inputRefs.current[0] = el)}
             value={newStarter}
-            maxLength={64}
+            maxLength={Constants.MAX_CONVO_STARTER_LENGTH}
             className={`${inputClass} pr-10 py-[0.65rem]`}
             type="text"
             placeholder={
@@ -135,7 +135,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
               }}
               className={`${inputClass} pr-10 py-[0.65rem]`}
               type="text"
-              maxLength={64}
+              maxLength={Constants.MAX_CONVO_STARTER_LENGTH}
             />
             <TooltipAnchor
               side="top"
