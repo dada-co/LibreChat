@@ -71,7 +71,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
             ref={(el) => (inputRefs.current[0] = el)}
             value={newStarter}
             maxLength={64}
-            className={`${inputClass} pr-10`}
+            className={`${inputClass} pr-10 py-[0.65rem]`}
             type="text"
             placeholder={
               hasReachedMax
@@ -133,7 +133,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
                 newValue[index] = e.target.value;
                 field.onChange(newValue);
               }}
-              className={`${inputClass} pr-10`}
+              className={`${inputClass} pr-10 py-[0.65rem]`}
               type="text"
               maxLength={64}
             />
