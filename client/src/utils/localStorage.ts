@@ -26,6 +26,7 @@ export function getLocalStorageItems() {
 
 export function clearLocalStorage(skipFirst?: boolean) {
   const keys = Object.keys(localStorage);
+  const authKeys = new Set(['token', 'jwt', 'accessToken', 'refreshToken', 'loggedIn', 'userId', 'auth']);
   keys.forEach((key) => {
     if (skipFirst === true && key.endsWith('0')) {
       return;
@@ -39,7 +40,8 @@ export function clearLocalStorage(skipFirst?: boolean) {
       key === LocalStorageKeys.LAST_SPEC ||
       key === LocalStorageKeys.LAST_TOOLS ||
       key === LocalStorageKeys.LAST_MODEL ||
-      key === LocalStorageKeys.FILES_TO_DELETE
+      key === LocalStorageKeys.FILES_TO_DELETE ||
+      authKeys.has(key)
     ) {
       localStorage.removeItem(key);
     }
