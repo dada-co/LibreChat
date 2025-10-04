@@ -12,3 +12,8 @@ endpoints:
 
 balance:
   enabled: false
+
+interface:
+  endpointsMenu: false
+  modelSelect: false
+  agents: true
