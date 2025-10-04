@@ -54,22 +54,35 @@ export const useEndpoints = ({
   );
 
   const filteredEndpoints = useMemo(() => {
-    if (!interfaceConfig.modelSelect) {
+    const showAgentsOnly = interfaceConfig.agents === true && interfaceConfig.modelSelect !== true;
+
+    if (!interfaceConfig.modelSelect && !showAgentsOnly) {
       return [];
     }
     const result: EModelEndpoint[] = [];
     for (let i = 0; i < endpoints.length; i++) {
+      if (showAgentsOnly && endpoints[i] !== EModelEndpoint.agents) {
+        continue;
+      }
       if (endpoints[i] === EModelEndpoint.agents && !hasAgentAccess) {
         continue;
       }
       if (includedEndpoints.size > 0 && !includedEndpoints.has(endpoints[i])) {
-        continue;
+        if (!(showAgentsOnly && endpoints[i] === EModelEndpoint.agents)) {
+          continue;
+        }
       }
       result.push(endpoints[i]);
     }
 
     return result;
-  }, [endpoints, hasAgentAccess, includedEndpoints, interfaceConfig.modelSelect]);
+  }, [
+    endpoints,
+    hasAgentAccess,
+    includedEndpoints,
+    interfaceConfig.agents,
+    interfaceConfig.modelSelect,
+  ]);
 
   const endpointRequiresUserKey = useCallback(
     (ep: string) => {
