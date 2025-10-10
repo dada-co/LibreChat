@@ -98,10 +98,6 @@ export function useToolToggle({
       if (isAuthenticated !== undefined && !isAuthenticated && setIsDialogOpen) {
         setIsDialogOpen(true);
         e?.preventDefault?.();
-        setEphemeralAgent((prev) => ({
-          ...(prev || {}),
-          [toolKey]: false,
-        }));
         return;
       }
 

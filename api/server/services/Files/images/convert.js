@@ -1,14 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { getStrategyFunctions } = require('../strategies');
 const { resizeImageBuffer } = require('./resize');
+const { getStrategyFunctions } = require('../strategies');
 const { logger } = require('~/config');
 
 /**
  * Converts an image file or buffer to target output type with specified resolution.
  *
- * @param {ServerRequest} req - The request object, containing user and app configuration data.
+ * @param {Express.Request} req - The request object, containing user and app configuration data.
  * @param {Buffer | Express.Multer.File} file - The file object, containing either a path or a buffer.
  * @param {'low' | 'high'} [resolution='high'] - The desired resolution for the output image.
  * @param {string} [basename=''] - The basename of the input file, if it is a buffer.
@@ -17,7 +17,6 @@ const { logger } = require('~/config');
  */
 async function convertImage(req, file, resolution = 'high', basename = '') {
   try {
-    const appConfig = req.config;
     let inputBuffer;
     let outputBuffer;
     let extension = path.extname(file.path ?? basename).toLowerCase();
@@ -40,11 +39,11 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
     } = await resizeImageBuffer(inputBuffer, resolution);
 
     // Check if the file is already in target format; if it isn't, convert it:
-    const targetExtension = `.${appConfig.imageOutputType}`;
+    const targetExtension = `.${req.app.locals.imageOutputType}`;
     if (extension === targetExtension) {
       outputBuffer = resizedBuffer;
     } else {
-      outputBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
+      outputBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
       extension = targetExtension;
     }
 
@@ -52,7 +51,7 @@ async function convertImage(req, file, resolution = 'high', basename = '') {
     const newFileName =
       path.basename(file.path ?? basename, path.extname(file.path ?? basename)) + extension;
 
-    const { saveBuffer } = getStrategyFunctions(appConfig.fileStrategy);
+    const { saveBuffer } = getStrategyFunctions(req.app.locals.fileStrategy);
 
     const savedFilePath = await saveBuffer({
       userId: req.user.id,

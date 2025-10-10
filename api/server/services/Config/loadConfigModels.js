@@ -1,39 +1,43 @@
-const { isUserProvided, normalizeEndpointName } = require('@librechat/api');
 const { EModelEndpoint, extractEnvVariable } = require('librechat-data-provider');
+const { isUserProvided, normalizeEndpointName } = require('~/server/utils');
 const { fetchModels } = require('~/server/services/ModelService');
-const { getAppConfig } = require('./app');
+const { getCustomConfig } = require('./getCustomConfig');
 
 /**
  * Load config endpoints from the cached configuration object
  * @function loadConfigModels
- * @param {ServerRequest} req - The Express request object.
+ * @param {Express.Request} req - The Express request object.
  */
 async function loadConfigModels(req) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
-  if (!appConfig) {
+  const customConfig = await getCustomConfig();
+
+  if (!customConfig) {
     return {};
   }
+
+  const { endpoints = {} } = customConfig ?? {};
   const modelsConfig = {};
-  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+  const azureEndpoint = endpoints[EModelEndpoint.azureOpenAI];
+  const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
   const { modelNames } = azureConfig ?? {};
 
-  if (modelNames && azureConfig) {
+  if (modelNames && azureEndpoint) {
     modelsConfig[EModelEndpoint.azureOpenAI] = modelNames;
   }
 
-  if (modelNames && azureConfig && azureConfig.plugins) {
+  if (modelNames && azureEndpoint && azureEndpoint.plugins) {
     modelsConfig[EModelEndpoint.gptPlugins] = modelNames;
   }
 
-  if (azureConfig?.assistants && azureConfig.assistantModels) {
+  if (azureEndpoint?.assistants && azureConfig.assistantModels) {
     modelsConfig[EModelEndpoint.azureAssistants] = azureConfig.assistantModels;
   }
 
-  if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
+  if (!Array.isArray(endpoints[EModelEndpoint.custom])) {
     return modelsConfig;
   }
 
-  const customEndpoints = appConfig.endpoints[EModelEndpoint.custom].filter(
+  const customEndpoints = endpoints[EModelEndpoint.custom].filter(
     (endpoint) =>
       endpoint.baseURL &&
       endpoint.apiKey &&

@@ -8,11 +8,11 @@ const { isEnabled, createSetBalanceConfig } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders, checkBan } = require('~/server/middleware');
 const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
-const { getAppConfig } = require('~/server/services/Config');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { Balance } = require('~/db/models');
 
 const setBalanceConfig = createSetBalanceConfig({
-  getAppConfig,
+  getBalanceConfig,
   Balance,
 });
 

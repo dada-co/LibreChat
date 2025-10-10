@@ -1,9 +1,9 @@
 import { ErrorTypes, EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type {
-  InitializeOpenAIOptionsParams,
+  UserKeyValues,
   OpenAIOptionsResult,
   OpenAIConfigOptions,
-  UserKeyValues,
+  InitializeOpenAIOptionsParams,
 } from '~/types';
 import { createHandleLLMNewToken } from '~/utils/generators';
 import { getAzureCredentials } from '~/utils/azure';
@@ -21,7 +21,6 @@ import { getOpenAIConfig } from './llm';
  */
 export const initializeOpenAI = async ({
   req,
-  appConfig,
   overrideModel,
   endpointOption,
   overrideEndpoint,
@@ -72,7 +71,7 @@ export const initializeOpenAI = async ({
   };
 
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
-  const azureConfig = isAzureOpenAI && appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+  const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
 
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -143,8 +142,8 @@ export const initializeOpenAI = async ({
 
   const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
 
-  const openAIConfig = appConfig.endpoints?.[EModelEndpoint.openAI];
-  const allConfig = appConfig.endpoints?.all;
+  const openAIConfig = req.app.locals[EModelEndpoint.openAI];
+  const allConfig = req.app.locals.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 
   let streamRate: number | undefined;

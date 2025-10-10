@@ -141,9 +141,6 @@ export const conversationPreset = {
   disableStreaming: {
     type: Boolean,
   },
-  fileTokenLimit: {
-    type: Number,
-  },
   /** Reasoning models only */
   reasoning_effort: {
     type: String,

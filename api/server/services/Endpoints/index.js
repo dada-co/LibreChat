@@ -1,11 +1,11 @@
 const { Providers } = require('@librechat/agents');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getCustomEndpointConfig } = require('@librechat/api');
 const initAnthropic = require('~/server/services/Endpoints/anthropic/initialize');
 const getBedrockOptions = require('~/server/services/Endpoints/bedrock/options');
 const initOpenAI = require('~/server/services/Endpoints/openAI/initialize');
 const initCustom = require('~/server/services/Endpoints/custom/initialize');
 const initGoogle = require('~/server/services/Endpoints/google/initialize');
+const { getCustomEndpointConfig } = require('~/server/services/Config');
 
 /** Check if the provider is a known custom provider
  * @param {string | undefined} [provider] - The provider string
@@ -31,16 +31,14 @@ const providerConfigMap = {
 
 /**
  * Get the provider configuration and override endpoint based on the provider string
- * @param {Object} params
- * @param {string} params.provider - The provider string
- * @param {AppConfig} params.appConfig - The application configuration
- * @returns {{
- * getOptions: (typeof providerConfigMap)[keyof typeof providerConfigMap],
+ * @param {string} provider - The provider string
+ * @returns {Promise<{
+ * getOptions: Function,
  * overrideProvider: string,
  * customEndpointConfig?: TEndpoint
- * }}
+ * }>}
  */
-function getProviderConfig({ provider, appConfig }) {
+async function getProviderConfig(provider) {
   let getOptions = providerConfigMap[provider];
   let overrideProvider = provider;
   /** @type {TEndpoint | undefined} */
@@ -50,7 +48,7 @@ function getProviderConfig({ provider, appConfig }) {
     overrideProvider = provider.toLowerCase();
     getOptions = providerConfigMap[overrideProvider];
   } else if (!getOptions) {
-    customEndpointConfig = getCustomEndpointConfig({ endpoint: provider, appConfig });
+    customEndpointConfig = await getCustomEndpointConfig(provider);
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }
@@ -59,7 +57,7 @@ function getProviderConfig({ provider, appConfig }) {
   }
 
   if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {
-    customEndpointConfig = getCustomEndpointConfig({ endpoint: provider, appConfig });
+    customEndpointConfig = await getCustomEndpointConfig(provider);
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }

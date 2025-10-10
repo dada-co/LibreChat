@@ -8,8 +8,6 @@ jest.mock('~/server/services/UserService', () => ({
   getUserKey: jest.fn().mockImplementation(() => ({})),
 }));
 
-// Config is now passed via req.config, not getAppConfig
-
 const app = { locals: {} };
 
 describe('google/initializeClient', () => {
@@ -28,12 +26,6 @@ describe('google/initializeClient', () => {
       body: { key: expiresAt },
       user: { id: '123' },
       app,
-      config: {
-        endpoints: {
-          all: {},
-          google: {},
-        },
-      },
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -56,12 +48,6 @@ describe('google/initializeClient', () => {
       body: { key: null },
       user: { id: '123' },
       app,
-      config: {
-        endpoints: {
-          all: {},
-          google: {},
-        },
-      },
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };
@@ -85,12 +71,6 @@ describe('google/initializeClient', () => {
       body: { key: expiresAt },
       user: { id: '123' },
       app,
-      config: {
-        endpoints: {
-          all: {},
-          google: {},
-        },
-      },
     };
     const res = {};
     const endpointOption = { modelOptions: { model: 'default-model' } };

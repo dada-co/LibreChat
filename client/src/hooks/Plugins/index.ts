@@ -1,3 +1,4 @@
+export * from './useMCPSelect';
 export * from './useToolToggle';
 export { default as useAuthCodeTool } from './useAuthCodeTool';
 export { default as usePluginInstall } from './usePluginInstall';

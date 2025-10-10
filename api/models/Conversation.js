@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { createTempChatExpirationDate } = require('@librechat/api');
+const { getCustomConfig } = require('~/server/services/Config/getCustomConfig');
 const { getMessages, deleteMessages } = require('./Message');
 const { Conversation } = require('~/db/models');
 
@@ -101,8 +102,8 @@ module.exports = {
 
       if (req?.body?.isTemporary) {
         try {
-          const appConfig = req.config;
-          update.expiredAt = createTempChatExpirationDate(appConfig?.interfaceConfig);
+          const customConfig = await getCustomConfig();
+          update.expiredAt = createTempChatExpirationDate(customConfig);
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveConvo\` context: ${metadata?.context}`);

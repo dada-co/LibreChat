@@ -1,9 +1,10 @@
+const { getCustomConfig } = require('~/server/services/Config');
+
 /**
  * @param {string} email
- * @param {string[]} [allowedDomains]
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-function isEmailDomainAllowed(email, allowedDomains) {
+async function isEmailDomainAllowed(email) {
   if (!email) {
     return false;
   }
@@ -14,13 +15,14 @@ function isEmailDomainAllowed(email, allowedDomains) {
     return false;
   }
 
-  if (!allowedDomains) {
+  const customConfig = await getCustomConfig();
+  if (!customConfig) {
     return true;
-  } else if (!Array.isArray(allowedDomains) || !allowedDomains.length) {
+  } else if (!customConfig?.registration?.allowedDomains) {
     return true;
   }
 
-  return allowedDomains.includes(domain);
+  return customConfig.registration.allowedDomains.includes(domain);
 }
 
 /**
@@ -63,13 +65,15 @@ function normalizeDomain(domain) {
 /**
  * Checks if the given domain is allowed. If no restrictions are set, allows all domains.
  * @param {string} [domain]
- * @param {string[]} [allowedDomains]
  * @returns {Promise<boolean>}
  */
-async function isActionDomainAllowed(domain, allowedDomains) {
+async function isActionDomainAllowed(domain) {
   if (!domain || typeof domain !== 'string') {
     return false;
   }
+
+  const customConfig = await getCustomConfig();
+  const allowedDomains = customConfig?.actions?.allowedDomains;
 
   if (!Array.isArray(allowedDomains) || !allowedDomains.length) {
     return true;

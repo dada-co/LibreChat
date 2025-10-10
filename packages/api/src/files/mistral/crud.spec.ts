@@ -44,13 +44,9 @@ jest.mock('~/utils/axios', () => ({
 
 import * as fs from 'fs';
 import axios from 'axios';
+import type { Request as ExpressRequest } from 'express';
 import type { Readable } from 'stream';
-import type {
-  MistralFileUploadResponse,
-  MistralSignedUrlResponse,
-  ServerRequest,
-  OCRResult,
-} from '~/types';
+import type { MistralFileUploadResponse, MistralSignedUrlResponse, OCRResult } from '~/types';
 import { logger as mockLogger } from '@librechat/data-schemas';
 import {
   uploadDocumentToMistral,
@@ -501,15 +497,17 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            // Use environment variable syntax to ensure loadAuthValues is called
-            apiKey: '${OCR_API_KEY}',
-            baseURL: '${OCR_BASEURL}',
-            mistralModel: 'mistral-medium',
+        app: {
+          locals: {
+            ocr: {
+              // Use environment variable syntax to ensure loadAuthValues is called
+              apiKey: '${OCR_API_KEY}',
+              baseURL: '${OCR_BASEURL}',
+              mistralModel: 'mistral-medium',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/file.pdf',
@@ -601,14 +599,16 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user456' },
-        config: {
-          ocr: {
-            apiKey: '${OCR_API_KEY}',
-            baseURL: '${OCR_BASEURL}',
-            mistralModel: 'mistral-medium',
+        app: {
+          locals: {
+            ocr: {
+              apiKey: '${OCR_API_KEY}',
+              baseURL: '${OCR_BASEURL}',
+              mistralModel: 'mistral-medium',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/image.png',
@@ -698,14 +698,16 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            apiKey: '${CUSTOM_API_KEY}',
-            baseURL: '${CUSTOM_BASEURL}',
-            mistralModel: '${CUSTOM_MODEL}',
+        app: {
+          locals: {
+            ocr: {
+              apiKey: '${CUSTOM_API_KEY}',
+              baseURL: '${CUSTOM_BASEURL}',
+              mistralModel: '${CUSTOM_MODEL}',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       // Set environment variable for model
       process.env.CUSTOM_MODEL = 'mistral-large';
@@ -788,15 +790,17 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            // Use environment variable syntax to ensure loadAuthValues is called
-            apiKey: '${INVALID_FORMAT}', // Using valid env var format but with an invalid name
-            baseURL: '${OCR_BASEURL}', // Using valid env var format
-            mistralModel: 'mistral-ocr-latest', // Plain string value
+        app: {
+          locals: {
+            ocr: {
+              // Use environment variable syntax to ensure loadAuthValues is called
+              apiKey: '${INVALID_FORMAT}', // Using valid env var format but with an invalid name
+              baseURL: '${OCR_BASEURL}', // Using valid env var format
+              mistralModel: 'mistral-ocr-latest', // Plain string value
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/file.pdf',
@@ -841,13 +845,15 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            apiKey: 'OCR_API_KEY',
-            baseURL: 'OCR_BASEURL',
+        app: {
+          locals: {
+            ocr: {
+              apiKey: 'OCR_API_KEY',
+              baseURL: 'OCR_BASEURL',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/file.pdf',
@@ -925,14 +931,16 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            apiKey: 'OCR_API_KEY',
-            baseURL: 'OCR_BASEURL',
-            mistralModel: 'mistral-ocr-latest',
+        app: {
+          locals: {
+            ocr: {
+              apiKey: 'OCR_API_KEY',
+              baseURL: 'OCR_BASEURL',
+              mistralModel: 'mistral-ocr-latest',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/file.pdf',
@@ -1011,15 +1019,17 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            // Direct values that should be used as-is, without variable substitution
-            apiKey: 'actual-api-key-value',
-            baseURL: 'https://direct-api-url.mistral.ai/v1',
-            mistralModel: 'mistral-direct-model',
+        app: {
+          locals: {
+            ocr: {
+              // Direct values that should be used as-is, without variable substitution
+              apiKey: 'actual-api-key-value',
+              baseURL: 'https://direct-api-url.mistral.ai/v1',
+              mistralModel: 'mistral-direct-model',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/file.pdf',
@@ -1123,15 +1133,17 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            // Empty string values - should fall back to defaults
-            apiKey: '',
-            baseURL: '',
-            mistralModel: '',
+        app: {
+          locals: {
+            ocr: {
+              // Empty string values - should fall back to defaults
+              apiKey: '',
+              baseURL: '',
+              mistralModel: '',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/file.pdf',
@@ -1264,14 +1276,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user123' },
-          config: {
-            ocr: {
-              apiKey: '${AZURE_MISTRAL_OCR_API_KEY}',
-              baseURL: 'https://endpoint.models.ai.azure.com/v1',
-              mistralModel: 'mistral-ocr-2503',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${AZURE_MISTRAL_OCR_API_KEY}',
+                baseURL: 'https://endpoint.models.ai.azure.com/v1',
+                mistralModel: 'mistral-ocr-2503',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1346,14 +1360,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user456' },
-          config: {
-            ocr: {
-              apiKey: 'hardcoded-api-key-12345',
-              baseURL: '${CUSTOM_OCR_BASEURL}',
-              mistralModel: 'mistral-ocr-latest',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: 'hardcoded-api-key-12345',
+                baseURL: '${CUSTOM_OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1468,14 +1484,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user123' },
-          config: {
-            ocr: {
-              apiKey: '${OCR_API_KEY}',
-              baseURL: '${OCR_BASEURL}',
-              mistralModel: 'mistral-ocr-latest',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1535,14 +1553,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user123' },
-          config: {
-            ocr: {
-              apiKey: '${OCR_API_KEY}',
-              baseURL: '${OCR_BASEURL}',
-              mistralModel: 'mistral-ocr-latest',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1621,14 +1641,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user123' },
-          config: {
-            ocr: {
-              apiKey: '${OCR_API_KEY}',
-              baseURL: '${OCR_BASEURL}',
-              mistralModel: 'mistral-ocr-latest',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1679,14 +1701,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user123' },
-          config: {
-            ocr: {
-              apiKey: '${OCR_API_KEY}',
-              baseURL: '${OCR_BASEURL}',
-              mistralModel: 'mistral-ocr-latest',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${OCR_API_KEY}',
+                baseURL: '${OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1751,14 +1775,16 @@ describe('MistralOCR Service', () => {
 
       const req = {
         user: { id: 'user123' },
-        config: {
-          ocr: {
-            apiKey: '${OCR_API_KEY}',
-            baseURL: '${OCR_BASEURL}',
-            mistralModel: 'mistral-ocr-latest',
+        app: {
+          locals: {
+            ocr: {
+              apiKey: '${OCR_API_KEY}',
+              baseURL: '${OCR_BASEURL}',
+              mistralModel: 'mistral-ocr-latest',
+            },
           },
         },
-      } as unknown as ServerRequest;
+      } as unknown as ExpressRequest;
 
       const file = {
         path: '/tmp/upload/azure-file.pdf',
@@ -1825,14 +1851,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user123' },
-          config: {
-            ocr: {
-              apiKey: '${AZURE_MISTRAL_OCR_API_KEY}',
-              baseURL: 'https://endpoint.models.ai.azure.com/v1',
-              mistralModel: 'mistral-ocr-2503',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: '${AZURE_MISTRAL_OCR_API_KEY}',
+                baseURL: 'https://endpoint.models.ai.azure.com/v1',
+                mistralModel: 'mistral-ocr-2503',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',
@@ -1887,14 +1915,16 @@ describe('MistralOCR Service', () => {
 
         const req = {
           user: { id: 'user456' },
-          config: {
-            ocr: {
-              apiKey: 'hardcoded-api-key-12345',
-              baseURL: '${CUSTOM_OCR_BASEURL}',
-              mistralModel: 'mistral-ocr-latest',
+          app: {
+            locals: {
+              ocr: {
+                apiKey: 'hardcoded-api-key-12345',
+                baseURL: '${CUSTOM_OCR_BASEURL}',
+                mistralModel: 'mistral-ocr-latest',
+              },
             },
           },
-        } as unknown as ServerRequest;
+        } as unknown as ExpressRequest;
 
         const file = {
           path: '/tmp/upload/file.pdf',

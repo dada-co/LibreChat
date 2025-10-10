@@ -1,7 +1,10 @@
-const { Constants, actionDomainSeparator } = require('librechat-data-provider');
+const { Constants, EModelEndpoint, actionDomainSeparator } = require('librechat-data-provider');
 const { domainParser } = require('./ActionService');
 
 jest.mock('keyv');
+jest.mock('~/server/services/Config', () => ({
+  getCustomConfig: jest.fn(),
+}));
 
 const globalCache = {};
 jest.mock('~/cache/getLogStores', () => {
@@ -50,6 +53,26 @@ jest.mock('~/cache/getLogStores', () => {
 });
 
 describe('domainParser', () => {
+  const req = {
+    app: {
+      locals: {
+        [EModelEndpoint.azureOpenAI]: {
+          assistants: true,
+        },
+      },
+    },
+  };
+
+  const reqNoAzure = {
+    app: {
+      locals: {
+        [EModelEndpoint.azureOpenAI]: {
+          assistants: false,
+        },
+      },
+    },
+  };
+
   const TLD = '.com';
 
   // Non-azure request

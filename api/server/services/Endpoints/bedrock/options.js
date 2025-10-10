@@ -11,7 +11,6 @@ const {
 const { getUserKey, checkUserKeyExpiry } = require('~/server/services/UserService');
 
 const getOptions = async ({ req, overrideModel, endpointOption }) => {
-  const appConfig = req.config;
   const {
     BEDROCK_AWS_SECRET_ACCESS_KEY,
     BEDROCK_AWS_ACCESS_KEY_ID,
@@ -51,13 +50,14 @@ const getOptions = async ({ req, overrideModel, endpointOption }) => {
   let streamRate = Constants.DEFAULT_STREAM_RATE;
 
   /** @type {undefined | TBaseEndpoint} */
-  const bedrockConfig = appConfig.endpoints?.[EModelEndpoint.bedrock];
+  const bedrockConfig = req.app.locals[EModelEndpoint.bedrock];
 
   if (bedrockConfig && bedrockConfig.streamRate) {
     streamRate = bedrockConfig.streamRate;
   }
 
-  const allConfig = appConfig.endpoints?.all;
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
   if (allConfig && allConfig.streamRate) {
     streamRate = allConfig.streamRate;
   }

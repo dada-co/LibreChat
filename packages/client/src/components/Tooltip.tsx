@@ -6,11 +6,11 @@ import { cn } from '~/utils';
 import './Tooltip.css';
 
 interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
-  role?: string;
-  className?: string;
   description: string;
-  enableHTML?: boolean;
   side?: 'top' | 'bottom' | 'left' | 'right';
+  className?: string;
+  role?: string;
+  enableHTML?: boolean;
 }
 
 export const TooltipAnchor = forwardRef<HTMLDivElement, TooltipAnchorProps>(function TooltipAnchor(

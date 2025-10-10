@@ -51,7 +51,6 @@ export interface IPreset extends Document {
   useResponsesApi?: boolean;
   web_search?: boolean;
   disableStreaming?: boolean;
-  fileTokenLimit?: number;
   // end of additional fields
   agentOptions?: unknown;
 }

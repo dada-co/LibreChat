@@ -11,7 +11,7 @@ const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 
 /**
- * @param {ServerRequest} req
+ * @param {Express.Request} req
  * @param {string} [endpoint]
  * @returns {Promise<string>}
  */
@@ -210,7 +210,6 @@ async function getOpenAIClient({ req, res, endpointOption, initAppClient, overri
  * @returns {Promise<AssistantListResponse>} 200 - success response - application/json
  */
 const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
-  const appConfig = req.config;
   const {
     limit = 100,
     order = 'desc',
@@ -231,20 +230,20 @@ const fetchAssistants = async ({ req, res, overrideEndpoint }) => {
   if (endpoint === EModelEndpoint.assistants) {
     ({ body } = await listAllAssistants({ req, res, version, query }));
   } else if (endpoint === EModelEndpoint.azureAssistants) {
-    const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+    const azureConfig = req.app.locals[EModelEndpoint.azureOpenAI];
     body = await listAssistantsForAzure({ req, res, version, azureConfig, query });
   }
 
   if (req.user.role === SystemRoles.ADMIN) {
     return body;
-  } else if (!appConfig.endpoints?.[endpoint]) {
+  } else if (!req.app.locals[endpoint]) {
     return body;
   }
 
   body.data = filterAssistants({
     userId: req.user.id,
     assistants: body.data,
-    assistantsConfig: appConfig.endpoints?.[endpoint],
+    assistantsConfig: req.app.locals[endpoint],
   });
   return body;
 };

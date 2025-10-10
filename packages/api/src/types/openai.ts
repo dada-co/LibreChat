@@ -4,7 +4,6 @@ import type { TEndpointOption, TAzureConfig, TEndpoint } from 'librechat-data-pr
 import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
 import type { AzureOptions } from './azure';
-import type { AppConfig } from './config';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
 
@@ -87,7 +86,6 @@ export type CheckUserKeyExpiryFunction = (expiresAt: string, endpoint: string) =
  */
 export interface InitializeOpenAIOptionsParams {
   req: RequestData;
-  appConfig: AppConfig;
   overrideModel?: string;
   overrideEndpoint?: string;
   endpointOption: Partial<TEndpointOption>;

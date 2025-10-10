@@ -1,21 +1,27 @@
-import { SystemRoles, Permissions, PermissionTypes, roleDefaults } from 'librechat-data-provider';
-import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
-import type { AppConfig } from '~/types/config';
-import { updateInterfacePermissions } from './permissions';
-import { loadDefaultInterface } from './interface';
+const {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  roleDefaults,
+} = require('librechat-data-provider');
+const { updateAccessPermissions, getRoleByName } = require('~/models/Role');
+const { loadDefaultInterface } = require('./interface');
 
-const mockUpdateAccessPermissions = jest.fn();
-const mockGetRoleByName = jest.fn();
+jest.mock('~/models/Role', () => ({
+  updateAccessPermissions: jest.fn(),
+  getRoleByName: jest.fn(),
+}));
 
-jest.mock('~/memory', () => ({
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isMemoryEnabled: jest.fn((config) => config?.enable === true),
 }));
 
-describe('updateInterfacePermissions - permissions', () => {
+describe('loadDefaultInterface', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Mock getRoleByName to return null (no existing permissions)
-    mockGetRoleByName.mockResolvedValue(null);
+    getRoleByName.mockResolvedValue(null);
   });
 
   it('should call updateAccessPermissions with the correct parameters when permission types are true', async () => {
@@ -41,15 +47,9 @@ describe('updateInterfacePermissions - permissions', () => {
         },
       },
     };
-    const configDefaults = { interface: {} } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    const configDefaults = { interface: {} };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
@@ -103,17 +103,17 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -143,15 +143,9 @@ describe('updateInterfacePermissions - permissions', () => {
         },
       },
     };
-    const configDefaults = { interface: {} } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    const configDefaults = { interface: {} };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
@@ -205,17 +199,17 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: false },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -245,15 +239,9 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
@@ -307,17 +295,17 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -360,15 +348,9 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
@@ -422,17 +404,17 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -462,15 +444,9 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     const expectedPermissionsForUser = {
       [PermissionTypes.PROMPTS]: {
@@ -524,17 +500,17 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Check USER role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       null,
     );
 
     // Check ADMIN role call
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       null,
@@ -543,7 +519,7 @@ describe('updateInterfacePermissions - permissions', () => {
 
   it('should only update permissions that do not exist when no config provided', async () => {
     // Mock that some permissions already exist
-    mockGetRoleByName.mockResolvedValue({
+    getRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
         [PermissionTypes.AGENTS]: { [Permissions.USE]: true },
@@ -572,15 +548,9 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     // Should be called with all permissions EXCEPT prompts and agents (which already exist)
     const expectedPermissionsForUser = {
@@ -623,8 +593,8 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       expect.objectContaining({
@@ -634,7 +604,7 @@ describe('updateInterfacePermissions - permissions', () => {
         },
       }),
     );
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       expect.objectContaining({
@@ -648,7 +618,7 @@ describe('updateInterfacePermissions - permissions', () => {
 
   it('should override existing permissions when explicitly configured', async () => {
     // Mock that some permissions already exist
-    mockGetRoleByName.mockResolvedValue({
+    getRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
         [PermissionTypes.AGENTS]: { [Permissions.USE]: false },
@@ -684,15 +654,9 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     // Should update prompts (explicitly configured) and all other permissions that don't exist
     const expectedPermissionsForUser = {
@@ -741,56 +705,21 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
     };
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.USER,
       expectedPermissionsForUser,
       expect.objectContaining({
         permissions: expect.any(Object),
       }),
     );
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+    expect(updateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
       expect.objectContaining({
         permissions: expect.any(Object),
       }),
     );
-  });
-
-  it('should handle memories OPT_OUT based on personalization when memories are enabled', async () => {
-    const config = {
-      interface: {
-        memories: true,
-      },
-      memory: {
-        // Memory enabled with personalization
-        agent: {
-          id: 'test-agent-id',
-        },
-        personalize: true,
-      } as unknown as TCustomConfig['memory'],
-    };
-    const configDefaults = { interface: {} } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
-
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
-
-    const userCall = mockUpdateAccessPermissions.mock.calls.find(
-      (call) => call[0] === SystemRoles.USER,
-    );
-    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
-      (call) => call[0] === SystemRoles.ADMIN,
-    );
-
-    // Both roles should have OPT_OUT set to true when personalization is enabled
-    expect(userCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
-    expect(adminCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
   });
 
   it('should use role-specific defaults for PEOPLE_PICKER when peoplePicker config is undefined', async () => {
@@ -801,23 +730,17 @@ describe('updateInterfacePermissions - permissions', () => {
         bookmarks: true,
       },
     };
-    const configDefaults = { interface: {} } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    const configDefaults = { interface: {} };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
-    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
 
     // Get the calls to updateAccessPermissions
-    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+    const userCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
-    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+    const adminCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.ADMIN,
     );
 
@@ -834,29 +757,6 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.VIEW_GROUPS]: true,
       [Permissions.VIEW_ROLES]: true,
     });
-  });
-
-  it('should only call getRoleByName once per role for efficiency', async () => {
-    const config = {
-      interface: {
-        prompts: true,
-        bookmarks: true,
-      },
-    };
-    const configDefaults = { interface: {} } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
-
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
-
-    // Should call getRoleByName exactly twice (once for USER, once for ADMIN)
-    expect(mockGetRoleByName).toHaveBeenCalledTimes(2);
-    expect(mockGetRoleByName).toHaveBeenCalledWith(SystemRoles.USER);
-    expect(mockGetRoleByName).toHaveBeenCalledWith(SystemRoles.ADMIN);
   });
 
   it('should use role-specific defaults for complex permissions when not configured', async () => {
@@ -888,20 +788,14 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
-    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+    const userCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
-    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+    const adminCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.ADMIN,
     );
 
@@ -935,9 +829,36 @@ describe('updateInterfacePermissions - permissions', () => {
     });
   });
 
+  it('should handle memories OPT_OUT based on personalization when memories are enabled', async () => {
+    const config = {
+      interface: {
+        memories: true,
+      },
+      memory: {
+        // Memory enabled with personalization
+        enable: true,
+        personalize: true,
+      },
+    };
+    const configDefaults = { interface: {} };
+
+    await loadDefaultInterface(config, configDefaults);
+
+    const userCall = updateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = updateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    // Both roles should have OPT_OUT set to true when personalization is enabled
+    expect(userCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
+    expect(adminCall[1][PermissionTypes.MEMORIES][Permissions.OPT_OUT]).toBe(true);
+  });
+
   it('should populate missing PEOPLE_PICKER and MARKETPLACE permissions with role-specific defaults', async () => {
     // Mock that PEOPLE_PICKER and MARKETPLACE permissions don't exist yet
-    mockGetRoleByName.mockResolvedValue({
+    getRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: true },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: true },
@@ -964,20 +885,14 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
-    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+    const userCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
-    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+    const adminCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.ADMIN,
     );
 
@@ -1038,7 +953,7 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.MARKETPLACE]: { [Permissions.USE]: true },
     };
 
-    mockGetRoleByName.mockResolvedValue({
+    getRoleByName.mockResolvedValue({
       permissions: existingUserPermissions,
     });
 
@@ -1058,18 +973,12 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
     // Should only update permissions that don't exist
-    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+    const userCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
 
@@ -1085,9 +994,26 @@ describe('updateInterfacePermissions - permissions', () => {
     expect(userCall[1]).toHaveProperty(PermissionTypes.AGENTS);
   });
 
+  it('should only call getRoleByName once per role for efficiency', async () => {
+    const config = {
+      interface: {
+        prompts: true,
+        bookmarks: true,
+      },
+    };
+    const configDefaults = { interface: {} };
+
+    await loadDefaultInterface(config, configDefaults);
+
+    // Should call getRoleByName exactly twice (once for USER, once for ADMIN)
+    expect(getRoleByName).toHaveBeenCalledTimes(2);
+    expect(getRoleByName).toHaveBeenCalledWith(SystemRoles.USER);
+    expect(getRoleByName).toHaveBeenCalledWith(SystemRoles.ADMIN);
+  });
+
   it('should only update explicitly configured permissions and leave others unchanged', async () => {
     // Mock existing permissions
-    mockGetRoleByName.mockResolvedValue({
+    getRoleByName.mockResolvedValue({
       permissions: {
         [PermissionTypes.PROMPTS]: { [Permissions.USE]: false },
         [PermissionTypes.BOOKMARKS]: { [Permissions.USE]: false },
@@ -1127,17 +1053,11 @@ describe('updateInterfacePermissions - permissions', () => {
           use: false,
         },
       },
-    } as TConfigDefaults;
-    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+    };
 
-    await updateInterfacePermissions({
-      appConfig,
-      getRoleByName: mockGetRoleByName,
-      updateAccessPermissions: mockUpdateAccessPermissions,
-    });
+    await loadDefaultInterface(config, configDefaults);
 
-    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+    const userCall = updateAccessPermissions.mock.calls.find(
       (call) => call[0] === SystemRoles.USER,
     );
 

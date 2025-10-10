@@ -62,7 +62,6 @@ export default function useSSE(
   } = chatHelpers;
 
   const {
-    clearStepMaps,
     stepHandler,
     syncHandler,
     finalHandler,
@@ -102,7 +101,6 @@ export default function useSSE(
     payload = removeNullishValues(payload) as TPayload;
 
     let textIndex = null;
-    clearStepMaps();
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),

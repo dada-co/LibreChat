@@ -7,9 +7,14 @@ const {
   convertMCPToolToPlugin,
   convertMCPToolsToPlugins,
 } = require('@librechat/api');
-const { getCachedTools, setCachedTools, mergeUserTools } = require('~/server/services/Config');
+const {
+  getCachedTools,
+  setCachedTools,
+  mergeUserTools,
+  getCustomConfig,
+} = require('~/server/services/Config');
+const { loadAndFormatTools } = require('~/server/services/ToolService');
 const { availableTools, toolkits } = require('~/app/clients/tools');
-const { getAppConfig } = require('~/server/services/Config');
 const { getMCPManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
@@ -22,9 +27,8 @@ const getAvailablePluginsController = async (req, res) => {
       return;
     }
 
-    const appConfig = await getAppConfig({ role: req.user?.role });
     /** @type {{ filteredTools: string[], includedTools: string[] }} */
-    const { filteredTools = [], includedTools = [] } = appConfig;
+    const { filteredTools = [], includedTools = [] } = req.app.locals;
     /** @type {import('@librechat/api').LCManifestTool[]} */
     const pluginManifest = availableTools;
 
@@ -70,14 +74,13 @@ const getAvailableTools = async (req, res) => {
       logger.warn('[getAvailableTools] User ID not found in request');
       return res.status(401).json({ message: 'Unauthorized' });
     }
+    const customConfig = await getCustomConfig();
     const cache = getLogStores(CacheKeys.CONFIG_STORE);
     const cachedToolsArray = await cache.get(CacheKeys.TOOLS);
     const cachedUserTools = await getCachedTools({ userId });
-
-    const mcpManager = getMCPManager();
     const userPlugins =
       cachedUserTools != null
-        ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, mcpManager })
+        ? convertMCPToolsToPlugins({ functionTools: cachedUserTools, customConfig })
         : undefined;
 
     if (cachedToolsArray != null && userPlugins != null) {
@@ -90,19 +93,28 @@ const getAvailableTools = async (req, res) => {
     let toolDefinitions = await getCachedTools({ includeGlobal: true });
     let prelimCachedTools;
 
+    // TODO: this is a temp fix until app config is refactored
+    if (!toolDefinitions) {
+      toolDefinitions = loadAndFormatTools({
+        adminFilter: req.app.locals?.filteredTools,
+        adminIncluded: req.app.locals?.includedTools,
+        directory: req.app.locals?.paths.structuredTools,
+      });
+      prelimCachedTools = toolDefinitions;
+    }
+
     /** @type {import('@librechat/api').LCManifestTool[]} */
     let pluginManifest = availableTools;
-
-    const appConfig = req.config ?? (await getAppConfig({ role: req.user?.role }));
-    if (appConfig?.mcpConfig != null) {
+    if (customConfig?.mcpServers != null) {
       try {
+        const mcpManager = getMCPManager();
         const mcpTools = await mcpManager.getAllToolFunctions(userId);
         prelimCachedTools = prelimCachedTools ?? {};
         for (const [toolKey, toolData] of Object.entries(mcpTools)) {
           const plugin = convertMCPToolToPlugin({
             toolKey,
             toolData,
-            mcpManager,
+            customConfig,
           });
           if (plugin) {
             pluginManifest.push(plugin);
@@ -149,7 +161,7 @@ const getAvailableTools = async (req, res) => {
       if (plugin.pluginKey.includes(Constants.mcp_delimiter)) {
         const parts = plugin.pluginKey.split(Constants.mcp_delimiter);
         const serverName = parts[parts.length - 1];
-        const serverConfig = appConfig?.mcpConfig?.[serverName];
+        const serverConfig = customConfig?.mcpServers?.[serverName];
 
         if (serverConfig?.customUserVars) {
           const customVarKeys = Object.keys(serverConfig.customUserVars);

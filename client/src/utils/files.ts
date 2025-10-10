@@ -3,11 +3,10 @@ import {
   megabyte,
   QueryKeys,
   excelMimeTypes,
-  EToolResources,
   codeTypeMapping,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
+import type { TFile, EndpointFileConfig } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
@@ -204,15 +203,11 @@ export const validateFiles = ({
   fileList,
   setError,
   endpointFileConfig,
-  toolResource,
-  fileConfig,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
   setError: (error: string) => void;
   endpointFileConfig: EndpointFileConfig;
-  toolResource?: string;
-  fileConfig: FileConfig | null;
 }) => {
   const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } = endpointFileConfig;
   const existingFiles = Array.from(files.values());
@@ -252,16 +247,7 @@ export const validateFiles = ({
       fileList[i] = newFile;
     }
 
-    let mimeTypesToCheck = supportedMimeTypes;
-    if (toolResource === EToolResources.ocr) {
-      mimeTypesToCheck = [
-        ...(fileConfig?.text?.supportedMimeTypes || []),
-        ...(fileConfig?.ocr?.supportedMimeTypes || []),
-        ...(fileConfig?.stt?.supportedMimeTypes || []),
-      ];
-    }
-
-    if (!checkType(originalFile.type, mimeTypesToCheck)) {
+    if (!checkType(originalFile.type, supportedMimeTypes)) {
       console.log(originalFile);
       setError('Currently, unsupported file type: ' + originalFile.type);
       return false;

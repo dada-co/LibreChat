@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { Tools } = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
+const { logger } = require('~/config');
 
 /**
  * Creates a function to handle search results and stream them as attachments

@@ -1,7 +1,5 @@
 import { AuthType, Constants, EToolResources } from 'librechat-data-provider';
-import type { TPlugin } from 'librechat-data-provider';
-import type { MCPManager } from '~/mcp/MCPManager';
-import { LCAvailableTools, LCFunctionTool } from '~/mcp/types';
+import type { TCustomConfig, TPlugin, FunctionTool } from 'librechat-data-provider';
 
 /**
  * Filters out duplicate plugins from the list of plugins.
@@ -59,11 +57,11 @@ export const checkPluginAuth = (plugin?: TPlugin): boolean => {
 export function convertMCPToolToPlugin({
   toolKey,
   toolData,
-  mcpManager,
+  customConfig,
 }: {
   toolKey: string;
-  toolData: LCFunctionTool;
-  mcpManager?: MCPManager;
+  toolData: FunctionTool;
+  customConfig?: Partial<TCustomConfig> | null;
 }): TPlugin | undefined {
   if (!toolData.function || !toolKey.includes(Constants.mcp_delimiter)) {
     return;
@@ -73,7 +71,7 @@ export function convertMCPToolToPlugin({
   const parts = toolKey.split(Constants.mcp_delimiter);
   const serverName = parts[parts.length - 1];
 
-  const serverConfig = mcpManager?.getRawConfig(serverName);
+  const serverConfig = customConfig?.mcpServers?.[serverName];
 
   const plugin: TPlugin = {
     /** Tool name without server suffix */
@@ -112,10 +110,10 @@ export function convertMCPToolToPlugin({
  */
 export function convertMCPToolsToPlugins({
   functionTools,
-  mcpManager,
+  customConfig,
 }: {
-  functionTools?: LCAvailableTools;
-  mcpManager?: MCPManager;
+  functionTools?: Record<string, FunctionTool>;
+  customConfig?: Partial<TCustomConfig> | null;
 }): TPlugin[] | undefined {
   if (!functionTools || typeof functionTools !== 'object') {
     return;
@@ -123,7 +121,7 @@ export function convertMCPToolsToPlugins({
 
   const plugins: TPlugin[] = [];
   for (const [toolKey, toolData] of Object.entries(functionTools)) {
-    const plugin = convertMCPToolToPlugin({ toolKey, toolData, mcpManager });
+    const plugin = convertMCPToolToPlugin({ toolKey, toolData, customConfig });
     if (plugin) {
       plugins.push(plugin);
     }

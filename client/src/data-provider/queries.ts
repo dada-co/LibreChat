@@ -45,6 +45,21 @@ export const useGetPresetsQuery = (
   });
 };
 
+export const useGetEndpointsConfigOverride = <TData = unknown | boolean>(
+  config?: UseQueryOptions<unknown | boolean, unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<unknown | boolean, unknown, TData>(
+    [QueryKeys.endpointsConfigOverride],
+    () => dataService.getEndpointsConfigOverride(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
 export const useGetConvoIdQuery = (
   id: string,
   config?: UseQueryOptions<t.TConversation>,
@@ -400,27 +415,22 @@ export const usePromptGroupsInfiniteQuery = (
   params?: t.TPromptGroupsWithFilterRequest,
   config?: UseInfiniteQueryOptions<t.PromptGroupListResponse, unknown>,
 ) => {
-  const { name, pageSize, category } = params || {};
+  const { name, pageSize, category, ...rest } = params || {};
   return useInfiniteQuery<t.PromptGroupListResponse, unknown>(
     [QueryKeys.promptGroups, name, category, pageSize],
-    ({ pageParam }) => {
-      const queryParams: t.TPromptGroupsWithFilterRequest = {
+    ({ pageParam = '1' }) =>
+      dataService.getPromptGroups({
+        ...rest,
         name,
         category: category || '',
-        limit: (pageSize || 10).toString(),
-      };
-
-      // Only add cursor if it's a valid string
-      if (pageParam && typeof pageParam === 'string') {
-        queryParams.cursor = pageParam;
-      }
-
-      return dataService.getPromptGroups(queryParams);
-    },
+        pageNumber: pageParam?.toString(),
+        pageSize: (pageSize || 10).toString(),
+      }),
     {
       getNextPageParam: (lastPage) => {
-        // Use cursor-based pagination - ensure we return a valid cursor or undefined
-        return lastPage.has_more && lastPage.after ? lastPage.after : undefined;
+        const currentPageNumber = Number(lastPage.pageNumber);
+        const totalPages = Number(lastPage.pages);
+        return currentPageNumber < totalPages ? currentPageNumber + 1 : undefined;
       },
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

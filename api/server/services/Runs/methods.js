@@ -18,7 +18,6 @@ const { EModelEndpoint } = require('librechat-data-provider');
  * @returns {Promise<Object>} The data retrieved from the API.
  */
 async function retrieveRun({ thread_id, run_id, timeout, openai }) {
-  const appConfig = openai.req.config;
   const { apiKey, baseURL, httpAgent, organization } = openai;
   let url = `${baseURL}/threads/${thread_id}/runs/${run_id}`;
 
@@ -32,7 +31,7 @@ async function retrieveRun({ thread_id, run_id, timeout, openai }) {
   }
 
   /** @type {TAzureConfig | undefined} */
-  const azureConfig = appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+  const azureConfig = openai.req.app.locals[EModelEndpoint.azureOpenAI];
 
   if (azureConfig && azureConfig.assistants) {
     delete headers.Authorization;

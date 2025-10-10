@@ -20,17 +20,17 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/cache/getLogStores', () => () => ({
-  get: jest.fn().mockResolvedValue({
-    agents: {
-      maxCitations: 30,
-      maxCitationsPerFile: 5,
-      minRelevanceScore: 0.45,
+jest.mock('~/server/services/Config/getCustomConfig', () => ({
+  getCustomConfig: jest.fn().mockResolvedValue({
+    endpoints: {
+      agents: {
+        maxCitations: 30,
+        maxCitationsPerFile: 5,
+        minRelevanceScore: 0.45,
+      },
     },
     fileStrategy: 'local',
   }),
-  set: jest.fn(),
-  delete: jest.fn(),
 }));
 
 jest.mock('~/config', () => ({
@@ -46,17 +46,6 @@ describe('processFileCitations', () => {
     user: {
       id: 'user123',
     },
-  };
-
-  const mockAppConfig = {
-    endpoints: {
-      agents: {
-        maxCitations: 30,
-        maxCitationsPerFile: 5,
-        minRelevanceScore: 0.45,
-      },
-    },
-    fileStrategy: 'local',
   };
 
   const mockMetadata = {
@@ -96,7 +85,6 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
-        appConfig: mockAppConfig,
       });
 
       expect(result).toBeTruthy();
@@ -112,7 +100,6 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
-        appConfig: mockAppConfig,
       });
 
       expect(result).toBeNull();
@@ -140,7 +127,6 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
-        appConfig: mockAppConfig,
       });
 
       expect(result).toBeNull();
@@ -152,7 +138,6 @@ describe('processFileCitations', () => {
         toolCallId: 'call_123',
         metadata: mockMetadata,
         user: mockReq.user,
-        appConfig: mockAppConfig,
       });
 
       expect(result).toBeNull();

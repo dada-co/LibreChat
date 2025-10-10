@@ -1,6 +1,5 @@
 import { AuthType, Constants, EToolResources } from 'librechat-data-provider';
-import type { TPlugin, FunctionTool } from 'librechat-data-provider';
-import type { MCPManager } from '~/mcp/MCPManager';
+import type { TPlugin, FunctionTool, TCustomConfig } from 'librechat-data-provider';
 import {
   convertMCPToolsToPlugins,
   filterUniquePlugins,
@@ -278,18 +277,19 @@ describe('format.ts helper functions', () => {
         } as FunctionTool,
       };
 
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue({
-          command: 'test',
-          args: [],
-          iconPath: '/path/to/icon.png',
-        }),
-      } as unknown as MCPManager;
+      const customConfig: Partial<TCustomConfig> = {
+        mcpServers: {
+          server1: {
+            command: 'test',
+            args: [],
+            iconPath: '/path/to/icon.png',
+          },
+        },
+      };
 
-      const result = convertMCPToolsToPlugins({ functionTools, mcpManager: mockMcpManager });
+      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
       expect(result).toHaveLength(1);
       expect(result![0].icon).toBe('/path/to/icon.png');
-      expect(mockMcpManager.getRawConfig).toHaveBeenCalledWith('server1');
     });
 
     it('should handle customUserVars in server config', () => {
@@ -300,25 +300,26 @@ describe('format.ts helper functions', () => {
         } as FunctionTool,
       };
 
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue({
-          command: 'test',
-          args: [],
-          customUserVars: {
-            API_KEY: { title: 'API Key', description: 'Your API key' },
-            SECRET: { title: 'Secret', description: 'Your secret' },
+      const customConfig: Partial<TCustomConfig> = {
+        mcpServers: {
+          server1: {
+            command: 'test',
+            args: [],
+            customUserVars: {
+              API_KEY: { title: 'API Key', description: 'Your API key' },
+              SECRET: { title: 'Secret', description: 'Your secret' },
+            },
           },
-        }),
-      } as unknown as MCPManager;
+        },
+      };
 
-      const result = convertMCPToolsToPlugins({ functionTools, mcpManager: mockMcpManager });
+      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
       expect(result).toHaveLength(1);
       expect(result![0].authConfig).toHaveLength(2);
       expect(result![0].authConfig).toEqual([
         { authField: 'API_KEY', label: 'API Key', description: 'Your API key' },
         { authField: 'SECRET', label: 'Secret', description: 'Your secret' },
       ]);
-      expect(mockMcpManager.getRawConfig).toHaveBeenCalledWith('server1');
     });
 
     it('should use key as label when title is missing in customUserVars', () => {
@@ -329,22 +330,23 @@ describe('format.ts helper functions', () => {
         } as FunctionTool,
       };
 
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue({
-          command: 'test',
-          args: [],
-          customUserVars: {
-            API_KEY: { title: 'API Key', description: 'Your API key' },
+      const customConfig: Partial<TCustomConfig> = {
+        mcpServers: {
+          server1: {
+            command: 'test',
+            args: [],
+            customUserVars: {
+              API_KEY: { title: 'API Key', description: 'Your API key' },
+            },
           },
-        }),
-      } as unknown as MCPManager;
+        },
+      };
 
-      const result = convertMCPToolsToPlugins({ functionTools, mcpManager: mockMcpManager });
+      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
       expect(result).toHaveLength(1);
       expect(result![0].authConfig).toEqual([
         { authField: 'API_KEY', label: 'API Key', description: 'Your API key' },
       ]);
-      expect(mockMcpManager.getRawConfig).toHaveBeenCalledWith('server1');
     });
 
     it('should handle empty customUserVars', () => {
@@ -355,51 +357,19 @@ describe('format.ts helper functions', () => {
         } as FunctionTool,
       };
 
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue({
-          command: 'test',
-          args: [],
-          customUserVars: {},
-        }),
-      } as unknown as MCPManager;
-
-      const result = convertMCPToolsToPlugins({ functionTools, mcpManager: mockMcpManager });
-      expect(result).toHaveLength(1);
-      expect(result![0].authConfig).toEqual([]);
-      expect(mockMcpManager.getRawConfig).toHaveBeenCalledWith('server1');
-    });
-
-    it('should handle missing mcpManager', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1' },
-        } as FunctionTool,
+      const customConfig: Partial<TCustomConfig> = {
+        mcpServers: {
+          server1: {
+            command: 'test',
+            args: [],
+            customUserVars: {},
+          },
+        },
       };
 
-      const result = convertMCPToolsToPlugins({ functionTools });
+      const result = convertMCPToolsToPlugins({ functionTools, customConfig });
       expect(result).toHaveLength(1);
-      expect(result![0].icon).toBeUndefined();
       expect(result![0].authConfig).toEqual([]);
-    });
-
-    it('should handle when getRawConfig returns undefined', () => {
-      const functionTools: Record<string, FunctionTool> = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          type: 'function',
-          function: { name: 'tool1', description: 'Tool 1' },
-        } as FunctionTool,
-      };
-
-      const mockMcpManager = {
-        getRawConfig: jest.fn().mockReturnValue(undefined),
-      } as unknown as MCPManager;
-
-      const result = convertMCPToolsToPlugins({ functionTools, mcpManager: mockMcpManager });
-      expect(result).toHaveLength(1);
-      expect(result![0].icon).toBeUndefined();
-      expect(result![0].authConfig).toEqual([]);
-      expect(mockMcpManager.getRawConfig).toHaveBeenCalledWith('server1');
     });
   });
 

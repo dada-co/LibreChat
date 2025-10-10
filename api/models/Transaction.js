@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { getBalanceConfig } = require('~/server/services/Config');
 const { getMultiplier, getCacheMultiplier } = require('./tx');
 const { Transaction, Balance } = require('~/db/models');
 
@@ -186,10 +187,9 @@ async function createAutoRefillTransaction(txData) {
 
 /**
  * Static method to create a transaction and update the balance
- * @param {txData} _txData - Transaction data.
+ * @param {txData} txData - Transaction data.
  */
-async function createTransaction(_txData) {
-  const { balance, ...txData } = _txData;
+async function createTransaction(txData) {
   if (txData.rawAmount != null && isNaN(txData.rawAmount)) {
     return;
   }
@@ -199,6 +199,8 @@ async function createTransaction(_txData) {
   calculateTokenValue(transaction);
 
   await transaction.save();
+
+  const balance = await getBalanceConfig();
   if (!balance?.enabled) {
     return;
   }
@@ -219,10 +221,9 @@ async function createTransaction(_txData) {
 
 /**
  * Static method to create a structured transaction and update the balance
- * @param {txData} _txData - Transaction data.
+ * @param {txData} txData - Transaction data.
  */
-async function createStructuredTransaction(_txData) {
-  const { balance, ...txData } = _txData;
+async function createStructuredTransaction(txData) {
   const transaction = new Transaction({
     ...txData,
     endpointTokenConfig: txData.endpointTokenConfig,
@@ -232,6 +233,7 @@ async function createStructuredTransaction(_txData) {
 
   await transaction.save();
 
+  const balance = await getBalanceConfig();
   if (!balance?.enabled) {
     return;
   }

@@ -75,7 +75,6 @@ export type FormattedContent =
   | {
       type: 'text';
       text: string;
-      metadata?: string;
     }
   | {
       type: 'image';
@@ -103,13 +102,6 @@ export type FormattedContentResult = [
   string | FormattedContent[],
   undefined | { content: FormattedContent[] },
 ];
-
-export type UIResource = {
-  uri: string;
-  mimeType: string;
-  text: string;
-  [key: string]: unknown;
-}
 
 export type ImageFormatter = (item: ImageContent) => FormattedContent;
 
@@ -142,5 +134,4 @@ export interface OAuthConnectionOptions {
   oauthStart?: (authURL: string) => Promise<void>;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
-  connectionTimeout?: number;
 }

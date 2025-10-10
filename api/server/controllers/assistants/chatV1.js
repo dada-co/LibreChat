@@ -1,7 +1,7 @@
 const { v4 } = require('uuid');
 const { sleep } = require('@librechat/agents');
+const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { sendEvent, getBalanceConfig } = require('@librechat/api');
 const {
   Time,
   Constants,
@@ -47,7 +47,6 @@ const { getOpenAIClient } = require('./helpers');
  * @returns {void}
  */
 const chatV1 = async (req, res) => {
-  const appConfig = req.config;
   logger.debug('[/assistants/chat/] req.body', req.body);
 
   const {
@@ -252,8 +251,8 @@ const chatV1 = async (req, res) => {
     }
 
     const checkBalanceBeforeRun = async () => {
-      const balanceConfig = getBalanceConfig(appConfig);
-      if (!balanceConfig?.enabled) {
+      const balance = req.app?.locals?.balance;
+      if (!balance?.enabled) {
         return;
       }
       const transactions =

@@ -246,7 +246,6 @@ function createToolEndCallback({ req, res, artifactPromises }) {
           const attachment = await processFileCitations({
             user,
             metadata,
-            appConfig: req.config,
             toolArtifact: output.artifact,
             toolCallId: output.tool_call_id,
           });

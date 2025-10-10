@@ -1,7 +1,7 @@
 const express = require('express');
 const { callTool, verifyToolAuth, getToolCalls } = require('~/server/controllers/tools');
 const { getAvailableTools } = require('~/server/controllers/PluginController');
-const { toolCallLimiter } = require('~/server/middleware');
+const { toolCallLimiter } = require('~/server/middleware/limiters');
 
 const router = express.Router();
 

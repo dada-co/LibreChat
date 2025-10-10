@@ -40,10 +40,9 @@ async function buildEndpointOption(req, res, next) {
     return handleError(res, { text: 'Error parsing conversation' });
   }
 
-  const appConfig = req.config;
-  if (appConfig.modelSpecs?.list && appConfig.modelSpecs?.enforce) {
+  if (req.app.locals.modelSpecs?.list && req.app.locals.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
-    const { list } = appConfig.modelSpecs;
+    const { list } = req.app.locals.modelSpecs;
     const { spec } = parsedBody;
 
     if (!spec) {

@@ -1,6 +1,5 @@
-const { logger } = require('@librechat/data-schemas');
 const { isEmailDomainAllowed } = require('~/server/services/domains');
-const { getAppConfig } = require('~/server/services/Config');
+const { logger } = require('~/config');
 
 /**
  * Checks the domain's social login is allowed
@@ -15,10 +14,7 @@ const { getAppConfig } = require('~/server/services/Config');
  */
 const checkDomainAllowed = async (req, res, next = () => {}) => {
   const email = req?.user?.email;
-  const appConfig = await getAppConfig({
-    role: req?.user?.role,
-  });
-  if (email && !isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
+  if (email && !(await isEmailDomainAllowed(email))) {
     logger.error(`[Social Login] [Social Login not allowed] [Email: ${email}]`);
     return res.redirect('/login');
   } else {

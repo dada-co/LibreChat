@@ -7,7 +7,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(true);
     expect(result.promptPrefix).toBeUndefined();
     expect(result.maxContextTokens).toBeUndefined();
-    expect(result.fileTokenLimit).toBeUndefined();
     expect(result.modelLabel).toBeUndefined();
     expect(result.modelOptions).toEqual({});
   });
@@ -18,7 +17,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(true);
     expect(result.promptPrefix).toBeUndefined();
     expect(result.maxContextTokens).toBeUndefined();
-    expect(result.fileTokenLimit).toBeUndefined();
     expect(result.modelLabel).toBeUndefined();
     expect(result.modelOptions).toEqual({});
   });
@@ -28,7 +26,6 @@ describe('extractLibreChatParams', () => {
       resendFiles: false,
       promptPrefix: 'You are a helpful assistant',
       maxContextTokens: 4096,
-      fileTokenLimit: 50000,
       modelLabel: 'GPT-4',
       model: 'gpt-4',
       temperature: 0.7,
@@ -40,7 +37,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(false);
     expect(result.promptPrefix).toBe('You are a helpful assistant');
     expect(result.maxContextTokens).toBe(4096);
-    expect(result.fileTokenLimit).toBe(50000);
     expect(result.modelLabel).toBe('GPT-4');
     expect(result.modelOptions).toEqual({
       model: 'gpt-4',
@@ -54,7 +50,6 @@ describe('extractLibreChatParams', () => {
       resendFiles: true,
       promptPrefix: null,
       maxContextTokens: 2048,
-      fileTokenLimit: undefined,
       modelLabel: null,
       model: 'claude-3',
     };
@@ -64,7 +59,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(true);
     expect(result.promptPrefix).toBeNull();
     expect(result.maxContextTokens).toBe(2048);
-    expect(result.fileTokenLimit).toBeUndefined();
     expect(result.modelLabel).toBeNull();
     expect(result.modelOptions).toEqual({
       model: 'claude-3',
@@ -83,7 +77,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(true); // Should use default
     expect(result.promptPrefix).toBe('Test prefix');
     expect(result.maxContextTokens).toBeUndefined();
-    expect(result.fileTokenLimit).toBeUndefined();
     expect(result.modelLabel).toBeUndefined();
     expect(result.modelOptions).toEqual({
       model: 'gpt-3.5-turbo',
@@ -97,7 +90,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(true); // Should use default
     expect(result.promptPrefix).toBeUndefined();
     expect(result.maxContextTokens).toBeUndefined();
-    expect(result.fileTokenLimit).toBeUndefined();
     expect(result.modelLabel).toBeUndefined();
     expect(result.modelOptions).toEqual({});
   });
@@ -107,7 +99,6 @@ describe('extractLibreChatParams', () => {
       resendFiles: false,
       promptPrefix: 'Custom prompt',
       maxContextTokens: 8192,
-      fileTokenLimit: 25000,
       modelLabel: 'Custom Model',
       // Model options
       model: 'gpt-4',
@@ -126,7 +117,6 @@ describe('extractLibreChatParams', () => {
     expect(result.resendFiles).toBe(false);
     expect(result.promptPrefix).toBe('Custom prompt');
     expect(result.maxContextTokens).toBe(8192);
-    expect(result.fileTokenLimit).toBe(25000);
     expect(result.modelLabel).toBe('Custom Model');
 
     // Model options should include everything else

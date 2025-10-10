@@ -11,7 +11,7 @@ const {
  * Loads the default models for the application.
  * @async
  * @function
- * @param {ServerRequest} req - The Express request object.
+ * @param {Express.Request} req - The Express request object.
  */
 async function loadDefaultModels(req) {
   try {

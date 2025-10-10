@@ -17,14 +17,12 @@ const { needsRefresh, getNewS3URL } = require('~/server/services/Files/S3/crud')
 const { Tools, Constants, FileSources } = require('librechat-data-provider');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { Transaction, Balance, User } = require('~/db/models');
-const { getAppConfig } = require('~/server/services/Config');
 const { deleteToolCalls } = require('~/models/ToolCall');
 const { deleteAllSharedLinks } = require('~/models');
 const { getMCPManager } = require('~/config');
 
 const getUserController = async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
-  /** @type {IUser} */
+  /** @type {MongoUser} */
   const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
   /**
    * These fields should not exist due to secure field selection, but deletion
@@ -33,7 +31,7 @@ const getUserController = async (req, res) => {
   delete userData.password;
   delete userData.totpSecret;
   delete userData.backupCodes;
-  if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
+  if (req.app.locals.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {
       return res.status(200).send(userData);
@@ -89,7 +87,6 @@ const deleteUserFiles = async (req) => {
 };
 
 const updateUserPluginsController = async (req, res) => {
-  const appConfig = await getAppConfig({ role: req.user?.role });
   const { user } = req;
   const { pluginKey, action, auth, isEntityTool } = req.body;
   try {
@@ -134,7 +131,7 @@ const updateUserPluginsController = async (req, res) => {
 
     if (pluginKey === Tools.web_search) {
       /** @type  {TCustomConfig['webSearch']} */
-      const webSearchConfig = appConfig?.webSearch;
+      const webSearchConfig = req.app.locals?.webSearch;
       keys = extractWebSearchEnvVars({
         keys: action === 'install' ? keys : webSearchKeys,
         config: webSearchConfig,
@@ -187,7 +184,7 @@ const updateUserPluginsController = async (req, res) => {
             // Extract server name from pluginKey (format: "mcp_<serverName>")
             const serverName = pluginKey.replace(Constants.mcp_prefix, '');
             logger.info(
-              `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
+              `[updateUserPluginsController] Disconnecting MCP server ${serverName} for user ${user.id} after plugin auth update for ${pluginKey}.`,
             );
             await mcpManager.disconnectUserConnection(user.id, serverName);
           }

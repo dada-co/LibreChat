@@ -1,15 +1,17 @@
 const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
+const { logAxiosError } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {ServerRequest} req - The request object from Express.
+ * @param {ServerRequest} req - The request object from Express. It should have an `app.locals.paths` object with
+ *                       a `publicPath` property.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.
  *
@@ -52,7 +54,8 @@ const deleteVectors = async (req, file) => {
  * Uploads a file to the configured Vector database
  *
  * @param {Object} params - The params object.
- * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
+ * @param {Object} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.

@@ -7,7 +7,6 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     chatGptLabel,
     promptPrefix,
     maxContextTokens,
-    fileTokenLimit,
     resendFiles = true,
     imageDetail,
     iconURL,
@@ -28,7 +27,6 @@ const buildOptions = (endpoint, parsedBody, endpointType) => {
     greeting,
     spec,
     maxContextTokens,
-    fileTokenLimit,
     modelOptions,
   });
 

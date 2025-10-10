@@ -3,7 +3,6 @@ const {
   loadMemoryConfig,
   agentsConfigSetup,
   loadWebSearchConfig,
-  loadDefaultInterface,
 } = require('@librechat/api');
 const {
   FileSources,
@@ -13,26 +12,35 @@ const {
 } = require('librechat-data-provider');
 const {
   checkWebSearchConfig,
+  checkAzureVariables,
   checkVariables,
   checkHealth,
   checkConfig,
 } = require('./start/checks');
+const { ensureDefaultCategories, seedDefaultRoles, initializeRoles } = require('~/models');
+const { azureAssistantsDefaults, assistantsConfigSetup } = require('./start/assistants');
 const { initializeAzureBlobService } = require('./Files/Azure/initialize');
 const { initializeFirebase } = require('./Files/Firebase/initialize');
-const handleRateLimits = require('./Config/handleRateLimits');
 const loadCustomConfig = require('./Config/loadCustomConfig');
+const handleRateLimits = require('./Config/handleRateLimits');
+const { loadDefaultInterface } = require('./start/interface');
 const { loadTurnstileConfig } = require('./start/turnstile');
+const { azureConfigSetup } = require('./start/azureOpenAI');
 const { processModelSpecs } = require('./start/modelSpecs');
 const { initializeS3 } = require('./Files/S3/initialize');
-const { loadAndFormatTools } = require('./start/tools');
-const { loadEndpoints } = require('./start/endpoints');
+const { loadAndFormatTools } = require('./ToolService');
+const { setCachedTools } = require('./Config');
 const paths = require('~/config/paths');
 
 /**
  * Loads custom config and initializes app-wide variables.
  * @function AppService
+ * @param {Express.Application} app - The Express application object.
  */
-const AppService = async () => {
+const AppService = async (app) => {
+  await initializeRoles();
+  await seedDefaultRoles();
+  await ensureDefaultCategories();
   /** @type {TCustomConfig} */
   const config = (await loadCustomConfig()) ?? {};
   const configDefaults = getConfigDefaults();
@@ -71,57 +79,101 @@ const AppService = async () => {
     directory: paths.structuredTools,
   });
 
-  const mcpConfig = config.mcpServers || null;
-  const registration = config.registration ?? configDefaults.registration;
-  const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
-  const turnstileConfig = loadTurnstileConfig(config, configDefaults);
-  const speech = config.speech;
+  await setCachedTools(availableTools, { isGlobal: true });
 
-  const defaultConfig = {
+  // Store MCP config for later initialization
+  const mcpConfig = config.mcpServers || null;
+
+  const socialLogins =
+    config?.registration?.socialLogins ?? configDefaults?.registration?.socialLogins;
+  const interfaceConfig = await loadDefaultInterface(config, configDefaults);
+  const turnstileConfig = loadTurnstileConfig(config, configDefaults);
+
+  const defaultLocals = {
+    config,
     ocr,
     paths,
-    config,
     memory,
-    speech,
-    balance,
-    mcpConfig,
     webSearch,
     fileStrategy,
-    registration,
+    socialLogins,
     filteredTools,
     includedTools,
-    availableTools,
     imageOutputType,
     interfaceConfig,
     turnstileConfig,
-    fileStrategies: config.fileStrategies,
+    balance,
+    mcpConfig,
   };
 
   const agentsDefaults = agentsConfigSetup(config);
 
   if (!Object.keys(config).length) {
-    const appConfig = {
-      ...defaultConfig,
-      endpoints: {
-        [EModelEndpoint.agents]: agentsDefaults,
-      },
+    app.locals = {
+      ...defaultLocals,
+      [EModelEndpoint.agents]: agentsDefaults,
     };
-    return appConfig;
+    return;
   }
 
   checkConfig(config);
   handleRateLimits(config?.rateLimits);
-  const loadedEndpoints = loadEndpoints(config, agentsDefaults);
 
-  const appConfig = {
-    ...defaultConfig,
+  const endpointLocals = {};
+  const endpoints = config?.endpoints;
+
+  if (endpoints?.[EModelEndpoint.azureOpenAI]) {
+    endpointLocals[EModelEndpoint.azureOpenAI] = azureConfigSetup(config);
+    checkAzureVariables();
+  }
+
+  if (endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
+    endpointLocals[EModelEndpoint.azureAssistants] = azureAssistantsDefaults();
+  }
+
+  if (endpoints?.[EModelEndpoint.azureAssistants]) {
+    endpointLocals[EModelEndpoint.azureAssistants] = assistantsConfigSetup(
+      config,
+      EModelEndpoint.azureAssistants,
+      endpointLocals[EModelEndpoint.azureAssistants],
+    );
+  }
+
+  if (endpoints?.[EModelEndpoint.assistants]) {
+    endpointLocals[EModelEndpoint.assistants] = assistantsConfigSetup(
+      config,
+      EModelEndpoint.assistants,
+      endpointLocals[EModelEndpoint.assistants],
+    );
+  }
+
+  endpointLocals[EModelEndpoint.agents] = agentsConfigSetup(config, agentsDefaults);
+
+  const endpointKeys = [
+    EModelEndpoint.openAI,
+    EModelEndpoint.google,
+    EModelEndpoint.bedrock,
+    EModelEndpoint.anthropic,
+    EModelEndpoint.gptPlugins,
+  ];
+
+  endpointKeys.forEach((key) => {
+    if (endpoints?.[key]) {
+      endpointLocals[key] = endpoints[key];
+    }
+  });
+
+  if (endpoints?.all) {
+    endpointLocals.all = endpoints.all;
+  }
+
+  app.locals = {
+    ...defaultLocals,
     fileConfig: config?.fileConfig,
     secureImageLinks: config?.secureImageLinks,
-    modelSpecs: processModelSpecs(config?.endpoints, config.modelSpecs, interfaceConfig),
-    endpoints: loadedEndpoints,
+    modelSpecs: processModelSpecs(endpoints, config.modelSpecs, interfaceConfig),
+    ...endpointLocals,
   };
-
-  return appConfig;
 };
 
 module.exports = AppService;

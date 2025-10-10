@@ -23,13 +23,10 @@ jest.mock('~/server/services/Config', () => ({
       socialLogins: ['saml'],
     },
   },
-  getAppConfig: jest.fn().mockResolvedValue({}),
-}));
-jest.mock('@librechat/api', () => ({
-  getBalanceConfig: jest.fn(() => ({
+  getBalanceConfig: jest.fn().mockResolvedValue({
     tokenCredits: 1000,
-    startBalance: 1000,
-  })),
+    startingBalance: 1000,
+  }),
 }));
 jest.mock('~/server/services/Config/EndpointService', () => ({
   config: {},

@@ -5,7 +5,6 @@ const { logger } = require('@librechat/data-schemas');
 const { agentCreateSchema, agentUpdateSchema } = require('@librechat/api');
 const {
   Tools,
-  Constants,
   SystemRoles,
   FileSources,
   ResourceType,
@@ -45,6 +44,7 @@ const systemTools = {
   [Tools.execute_code]: true,
   [Tools.file_search]: true,
   [Tools.web_search]: true,
+  mcp: true,
 };
 
 /**
@@ -65,15 +65,22 @@ const createAgentHandler = async (req, res) => {
     agentData.id = `agent_${nanoid()}`;
     agentData.author = userId;
     agentData.tools = [];
-
     const availableTools = await getCachedTools({ includeGlobal: true });
     for (const tool of tools) {
-      if (availableTools[tool]) {
-        agentData.tools.push(tool);
-      } else if (systemTools[tool]) {
-        agentData.tools.push(tool);
-      } else if (tool.includes(Constants.mcp_delimiter)) {
-        agentData.tools.push(tool);
+      let toolName;
+      let toolObj;
+      if (typeof tool === 'string') {
+        toolName = tool;
+        toolObj = { type: tool };
+      } else if (tool && typeof tool === 'object') {
+        toolName = tool.type;
+        toolObj = tool;
+      }
+      if (!toolName) {
+        continue;
+      }
+      if (availableTools[toolName] || systemTools[toolName]) {
+        agentData.tools.push(toolObj);
       }
     }
 
@@ -172,6 +179,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         author: agent.author,
         provider: agent.provider,
         model: agent.model,
+        conversation_starters: agent.conversation_starters ?? [],
         projectIds: agent.projectIds,
         // @deprecated - isCollaborative replaced by ACL permissions
         isCollaborative: agent.isCollaborative,
@@ -205,6 +213,28 @@ const updateAgentHandler = async (req, res) => {
     const id = req.params.id;
     const validatedData = agentUpdateSchema.parse(req.body);
     const { _id, ...updateData } = removeNullishValues(validatedData);
+    if (updateData.tools) {
+      const availableTools = await getCachedTools({ includeGlobal: true });
+      const parsedTools = [];
+      for (const tool of updateData.tools) {
+        let toolName;
+        let toolObj;
+        if (typeof tool === 'string') {
+          toolName = tool;
+          toolObj = { type: tool };
+        } else if (tool && typeof tool === 'object') {
+          toolName = tool.type;
+          toolObj = tool;
+        }
+        if (!toolName) {
+          continue;
+        }
+        if (availableTools[toolName] || systemTools[toolName]) {
+          parsedTools.push(toolObj);
+        }
+      }
+      updateData.tools = parsedTools;
+    }
     const existingAgent = await getAgent({ id });
 
     if (!existingAgent) {
@@ -449,6 +479,13 @@ const getListAgentsHandler = async (req, res) => {
       resourceType: ResourceType.AGENT,
       requiredPermissions: requiredPermission,
     });
+    logger.debug('[getListAgents] accessible resources', {
+      userId,
+      accessibleIds,
+      accessibleCount: accessibleIds.length,
+      filter,
+      requiredPermission,
+    });
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: ResourceType.AGENT,
       requiredPermissions: PermissionBits.VIEW,
@@ -459,6 +496,10 @@ const getListAgentsHandler = async (req, res) => {
       otherParams: filter,
       limit,
       after: cursor,
+    });
+    logger.debug('[getListAgents] fetched agents', {
+      userId,
+      returned: data?.data?.length ?? 0,
     });
     if (data?.data?.length) {
       data.data = data.data.map((agent) => {
@@ -488,7 +529,6 @@ const getListAgentsHandler = async (req, res) => {
  */
 const uploadAgentAvatarHandler = async (req, res) => {
   try {
-    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { agent_id } = req.params;
     if (!agent_id) {
@@ -512,7 +552,9 @@ const uploadAgentAvatarHandler = async (req, res) => {
     }
 
     const buffer = await fs.readFile(req.file.path);
-    const fileStrategy = getFileStrategy(appConfig, { isAvatar: true });
+
+    const fileStrategy = getFileStrategy(req.app.locals, { isAvatar: true });
+
     const resizedBuffer = await resizeAvatar({
       userId: req.user.id,
       input: buffer,

@@ -4,7 +4,6 @@ import type { AgentToolResources, TFile, AgentBaseResource } from 'librechat-dat
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { IMongoFile, IUser } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
-import type { AppConfig } from '~/types/';
 
 /**
  * Function type for retrieving files from the database
@@ -135,8 +134,7 @@ const categorizeFileForToolResources = ({
  * 4. Prevents duplicate files across all sources
  *
  * @param params - Parameters object
- * @param params.req - Express request object
- * @param params.appConfig - Application configuration object
+ * @param params.req - Express request object containing app configuration
  * @param params.getFiles - Function to retrieve files from database
  * @param params.requestFileSet - Set of file IDs from the current request
  * @param params.attachments - Promise resolving to array of attachment files
@@ -145,7 +143,6 @@ const categorizeFileForToolResources = ({
  */
 export const primeResources = async ({
   req,
-  appConfig,
   getFiles,
   requestFileSet,
   attachments: _attachments,
@@ -153,7 +150,6 @@ export const primeResources = async ({
   agentId,
 }: {
   req: ServerRequest & { user?: IUser };
-  appConfig: AppConfig;
   requestFileSet: Set<string>;
   attachments: Promise<Array<TFile | null>> | undefined;
   tool_resources: AgentToolResources | undefined;
@@ -202,9 +198,9 @@ export const primeResources = async ({
       }
     }
 
-    const isOCREnabled = (
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []
-    ).includes(AgentCapabilities.ocr);
+    const isOCREnabled = (req.app.locals?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
+      AgentCapabilities.ocr,
+    );
 
     if (tool_resources[EToolResources.ocr]?.file_ids && isOCREnabled) {
       const context = await getFiles(

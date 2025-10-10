@@ -1,6 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
+const { validateAgentModel } = require('@librechat/api');
 const { createContentAggregator } = require('@librechat/agents');
-const { validateAgentModel, getCustomEndpointConfig } = require('@librechat/api');
 const {
   Constants,
   EModelEndpoint,
@@ -13,15 +13,13 @@ const {
 } = require('~/server/controllers/agents/callbacks');
 const { initializeAgent } = require('~/server/services/Endpoints/agents/agent');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { loadAgentTools } = require('~/server/services/ToolService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { getAgent } = require('~/models/Agent');
 const { logViolation } = require('~/cache');
 
-/**
- * @param {AbortSignal} signal
- */
-function createToolLoader(signal) {
+function createToolLoader() {
   /**
    * @param {object} params
    * @param {ServerRequest} params.req
@@ -31,11 +29,7 @@ function createToolLoader(signal) {
    * @param {string} params.provider
    * @param {string} params.model
    * @param {AgentToolResources} params.tool_resources
-   * @returns {Promise<{
-   * tools: StructuredTool[],
-   * toolContextMap: Record<string, unknown>,
-   * userMCPAuthMap?: Record<string, Record<string, string>>
-   * } | undefined>}
+   * @returns {Promise<{ tools: StructuredTool[], toolContextMap: Record<string, unknown> } | undefined>}
    */
   return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources }) {
     const agent = { id: agentId, tools, provider, model };
@@ -44,7 +38,6 @@ function createToolLoader(signal) {
         req,
         res,
         agent,
-        signal,
         tool_resources,
       });
     } catch (error) {
@@ -53,11 +46,10 @@ function createToolLoader(signal) {
   };
 }
 
-const initializeClient = async ({ req, res, signal, endpointOption }) => {
+const initializeClient = async ({ req, res, endpointOption }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
   }
-  const appConfig = req.config;
 
   // TODO: use endpointOption to determine options/modelOptions
   /** @type {Array<UsageMetadata>} */
@@ -97,9 +89,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   }
 
   const agentConfigs = new Map();
-  const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
+  /** @type {Set<string>} */
+  const allowedProviders = new Set(req?.app?.locals?.[EModelEndpoint.agents]?.allowedProviders);
 
-  const loadTools = createToolLoader(signal);
+  const loadTools = createToolLoader();
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
@@ -118,7 +111,6 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   });
 
   const agent_ids = primaryConfig.agent_ids;
-  let userMCPAuthMap = primaryConfig.userMCPAuthMap;
   if (agent_ids?.length) {
     for (const agentId of agent_ids) {
       const agent = await getAgent({ id: agentId });
@@ -148,22 +140,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         endpointOption,
         allowedProviders,
       });
-      if (userMCPAuthMap != null) {
-        Object.assign(userMCPAuthMap, config.userMCPAuthMap ?? {});
-      } else {
-        userMCPAuthMap = config.userMCPAuthMap;
-      }
       agentConfigs.set(agentId, config);
     }
   }
 
-  let endpointConfig = appConfig.endpoints?.[primaryConfig.endpoint];
+  let endpointConfig = req.app.locals[primaryConfig.endpoint];
   if (!isAgentsEndpoint(primaryConfig.endpoint) && !endpointConfig) {
     try {
-      endpointConfig = getCustomEndpointConfig({
-        endpoint: primaryConfig.endpoint,
-        appConfig,
-      });
+      endpointConfig = await getCustomEndpointConfig(primaryConfig.endpoint);
     } catch (err) {
       logger.error(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
@@ -204,7 +188,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         : EModelEndpoint.agents,
   });
 
-  return { client, userMCPAuthMap };
+  return { client };
 };
 
 module.exports = { initializeClient };

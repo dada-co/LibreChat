@@ -3,7 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { generateShortLivedToken } = require('@librechat/api');
+const { generateShortLivedToken } = require('~/server/services/AuthService');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
 
@@ -38,15 +38,14 @@ async function saveLocalFile(file, outputPath, outputFilename) {
 /**
  * Saves an uploaded image file to a specified directory based on the user's ID and a filename.
  *
- * @param {ServerRequest} req - The Express request object, containing the user's information and app configuration.
+ * @param {Express.Request} req - The Express request object, containing the user's information and app configuration.
  * @param {Express.Multer.File} file - The uploaded file object.
  * @param {string} filename - The new filename to assign to the saved image (without extension).
  * @returns {Promise<void>}
  * @throws Will throw an error if the image saving process fails.
  */
 const saveLocalImage = async (req, file, filename) => {
-  const appConfig = req.config;
-  const imagePath = appConfig.paths.imageOutput;
+  const imagePath = req.app.locals.paths.imageOutput;
   const outputPath = path.join(imagePath, req.user.id ?? '');
   await saveLocalFile(file, outputPath, filename);
 };
@@ -163,7 +162,7 @@ async function getLocalFileURL({ fileName, basePath = 'images' }) {
  * the expected base path using the base, subfolder, and user id from the request, and then checks if the
  * provided filepath starts with this constructed base path.
  *
- * @param {ServerRequest} req - The request object from Express. It should contain a `user` property with an `id`.
+ * @param {Express.Request} req - The request object from Express. It should contain a `user` property with an `id`.
  * @param {string} base - The base directory path.
  * @param {string} subfolder - The subdirectory under the base path.
  * @param {string} filepath - The complete file path to be validated.
@@ -192,7 +191,8 @@ const unlinkFile = async (filepath) => {
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
- * @param {ServerRequest} req - The request object from Express.
+ * @param {Express.Request} req - The request object from Express. It should have an `app.locals.paths` object with
+ *                       a `publicPath` property.
  * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
  *                           a string representing the path of the file relative to the publicPath.
  *
@@ -201,8 +201,7 @@ const unlinkFile = async (filepath) => {
  *          file path is invalid or if there is an error in deletion.
  */
 const deleteLocalFile = async (req, file) => {
-  const appConfig = req.config;
-  const { publicPath, uploads } = appConfig.paths;
+  const { publicPath, uploads } = req.app.locals.paths;
 
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
   const cleanFilepath = file.filepath.split('?')[0];
@@ -257,7 +256,8 @@ const deleteLocalFile = async (req, file) => {
  * Uploads a file to the specified upload directory.
  *
  * @param {Object} params - The params object.
- * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
+ * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user, and an `app.locals.paths` object with an `uploads` path.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
@@ -268,12 +268,11 @@ const deleteLocalFile = async (req, file) => {
  *            - bytes: The size of the file in bytes.
  */
 async function uploadLocalFile({ req, file, file_id }) {
-  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const bytes = Buffer.byteLength(inputBuffer);
 
-  const { uploads } = appConfig.paths;
+  const { uploads } = req.app.locals.paths;
   const userPath = path.join(uploads, req.user.id);
 
   if (!fs.existsSync(userPath)) {
@@ -296,9 +295,8 @@ async function uploadLocalFile({ req, file, file_id }) {
  * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-async function getLocalFileStream(req, filepath) {
+function getLocalFileStream(req, filepath) {
   try {
-    const appConfig = req.config;
     if (filepath.includes('/uploads/')) {
       const basePath = filepath.split('/uploads/')[1];
 
@@ -307,8 +305,8 @@ async function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
-      const fullPath = path.join(appConfig.paths.uploads, basePath);
-      const uploadsDir = appConfig.paths.uploads;
+      const fullPath = path.join(req.app.locals.paths.uploads, basePath);
+      const uploadsDir = req.app.locals.paths.uploads;
 
       const rel = path.relative(uploadsDir, fullPath);
       if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {
@@ -325,8 +323,8 @@ async function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
-      const fullPath = path.join(appConfig.paths.imageOutput, basePath);
-      const publicDir = appConfig.paths.imageOutput;
+      const fullPath = path.join(req.app.locals.paths.imageOutput, basePath);
+      const publicDir = req.app.locals.paths.imageOutput;
 
       const rel = path.relative(publicDir, fullPath);
       if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes(`..${path.sep}`)) {

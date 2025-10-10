@@ -1,12 +1,7 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
-const {
-  Providers,
-  StepTypes,
-  GraphEvents,
-  Constants: AgentConstants,
-} = require('@librechat/agents');
+const { Constants: AgentConstants, Providers, GraphEvents } = require('@librechat/agents');
 const {
   sendEvent,
   MCPOAuthHandler,
@@ -16,14 +11,14 @@ const {
 const {
   Time,
   CacheKeys,
+  StepTypes,
   Constants,
   ContentTypes,
   isAssistantsEndpoint,
 } = require('librechat-data-provider');
 const { findToken, createToken, updateToken } = require('~/models');
 const { getMCPManager, getFlowStateManager } = require('~/config');
-const { getCachedTools, getAppConfig } = require('./Config');
-const { reinitMCPServer } = require('./Tools/mcp');
+const { getCachedTools, loadCustomConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -31,13 +26,16 @@ const { getLogStores } = require('~/cache');
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.stepId - The ID of the step in the flow.
  * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
+ * @param {string} params.loginFlowId - The ID of the login flow.
+ * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
  */
-function createRunStepDeltaEmitter({ res, stepId, toolCall }) {
+function createOAuthStart({ res, stepId, toolCall, loginFlowId, flowManager, signal }) {
   /**
+   * Creates a function to handle OAuth login requests.
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
-   * @returns {void}
+   * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
-  return function (authURL) {
+  return async function (authURL) {
     /** @type {{ id: string; delta: AgentToolCallDelta }} */
     const data = {
       id: stepId,
@@ -48,54 +46,17 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall }) {
         expires_at: Date.now() + Time.TWO_MINUTES,
       },
     };
-    sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
-  };
-}
-
-/**
- * @param {object} params
- * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {string} params.runId - The Run ID, i.e. message ID
- * @param {string} params.stepId - The ID of the step in the flow.
- * @param {ToolCallChunk} params.toolCall - The tool call object containing tool information.
- * @param {number} [params.index]
- */
-function createRunStepEmitter({ res, runId, stepId, toolCall, index }) {
-  return function () {
-    /** @type {import('@librechat/agents').RunStep} */
-    const data = {
-      runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-      id: stepId,
-      type: StepTypes.TOOL_CALLS,
-      index: index ?? 0,
-      stepDetails: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [toolCall],
+    /** Used to ensure the handler (use of `sendEvent`) is only invoked once */
+    await flowManager.createFlowWithHandler(
+      loginFlowId,
+      'oauth_login',
+      async () => {
+        sendEvent(res, { event: GraphEvents.ON_RUN_STEP_DELTA, data });
+        logger.debug('Sent OAuth login request to client');
+        return true;
       },
-    };
-    sendEvent(res, { event: GraphEvents.ON_RUN_STEP, data });
-  };
-}
-
-/**
- * Creates a function used to ensure the flow handler is only invoked once
- * @param {object} params
- * @param {string} params.flowId - The ID of the login flow.
- * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
- * @param {(authURL: string) => void} [params.callback]
- */
-function createOAuthStart({ flowId, flowManager, callback }) {
-  /**
-   * Creates a function to handle OAuth login requests.
-   * @param {string} authURL - The URL to redirect the user for OAuth authentication.
-   * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
-   */
-  return async function (authURL) {
-    await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
-      callback?.(authURL);
-      logger.debug('Sent OAuth login request to client');
-      return true;
-    });
+      signal,
+    );
   };
 }
 
@@ -138,167 +99,23 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
 }
 
 /**
- * @param {Object} params
- * @param {() => void} params.runStepEmitter
- * @param {(authURL: string) => void} params.runStepDeltaEmitter
- * @returns {(authURL: string) => void}
- */
-function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
-  return function (authURL) {
-    runStepEmitter();
-    runStepDeltaEmitter(authURL);
-  };
-}
-
-/**
- * @param {Object} params
- * @param {ServerRequest} params.req - The Express request object, containing user/request info.
- * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {string} params.serverName
- * @param {AbortSignal} params.signal
- * @param {string} params.model
- * @param {number} [params.index]
- * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
- * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
- */
-async function reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap }) {
-  const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
-  const flowId = `${req.user?.id}:${serverName}:${Date.now()}`;
-  const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-  const stepId = 'step_oauth_login_' + serverName;
-  const toolCall = {
-    id: flowId,
-    name: serverName,
-    type: 'tool_call_chunk',
-  };
-
-  const runStepEmitter = createRunStepEmitter({
-    res,
-    index,
-    runId,
-    stepId,
-    toolCall,
-  });
-  const runStepDeltaEmitter = createRunStepDeltaEmitter({
-    res,
-    stepId,
-    toolCall,
-  });
-  const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
-  const oauthStart = createOAuthStart({
-    res,
-    flowId,
-    callback,
-    flowManager,
-  });
-  return await reinitMCPServer({
-    req,
-    signal,
-    serverName,
-    oauthStart,
-    flowManager,
-    userMCPAuthMap,
-    forceNew: true,
-    returnOnOAuth: false,
-    connectionTimeout: Time.TWO_MINUTES,
-  });
-}
-
-/**
- * Creates all tools from the specified MCP Server via `toolKey`.
+ * Creates a general tool for an entire action set.
  *
- * This function assumes tools could not be aggregated from the cache of tool definitions,
- * i.e. `availableTools`, and will reinitialize the MCP server to ensure all tools are generated.
- *
- * @param {Object} params
- * @param {ServerRequest} params.req - The Express request object, containing user/request info.
- * @param {ServerResponse} params.res - The Express response object for sending events.
- * @param {string} params.serverName
- * @param {string} params.model
- * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
- * @param {number} [params.index]
- * @param {AbortSignal} [params.signal]
- * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
- * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
- */
-async function createMCPTools({ req, res, index, signal, serverName, provider, userMCPAuthMap }) {
-  const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
-  if (!result || !result.tools) {
-    logger.warn(`[MCP][${serverName}] Failed to reinitialize MCP server.`);
-    return;
-  }
-
-  const serverTools = [];
-  for (const tool of result.tools) {
-    const toolInstance = await createMCPTool({
-      req,
-      res,
-      provider,
-      userMCPAuthMap,
-      availableTools: result.availableTools,
-      toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
-    });
-    if (toolInstance) {
-      serverTools.push(toolInstance);
-    }
-  }
-
-  return serverTools;
-}
-
-/**
- * Creates a single tool from the specified MCP Server via `toolKey`.
- * @param {Object} params
+ * @param {Object} params - The parameters for loading action sets.
  * @param {ServerRequest} params.req - The Express request object, containing user/request info.
  * @param {ServerResponse} params.res - The Express response object for sending events.
  * @param {string} params.toolKey - The toolKey for the tool.
+ * @param {import('@librechat/agents').Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {string} params.model - The model for the tool.
- * @param {number} [params.index]
- * @param {AbortSignal} [params.signal]
- * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
- * @param {LCAvailableTools} [params.availableTools]
- * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
-async function createMCPTool({
-  req,
-  res,
-  index,
-  signal,
-  toolKey,
-  provider,
-  userMCPAuthMap,
-  availableTools: tools,
-}) {
-  const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
-
-  const availableTools =
-    tools ?? (await getCachedTools({ userId: req.user?.id, includeGlobal: true }));
-  /** @type {LCTool | undefined} */
-  let toolDefinition = availableTools?.[toolKey]?.function;
+async function createMCPTool({ req, res, toolKey, provider: _provider }) {
+  const availableTools = await getCachedTools({ userId: req.user?.id, includeGlobal: true });
+  const toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
-    logger.warn(
-      `[MCP][${serverName}][${toolName}] Requested tool not found in available tools, re-initializing MCP server.`,
-    );
-    const result = await reconnectServer({ req, res, index, signal, serverName, userMCPAuthMap });
-    toolDefinition = result?.availableTools?.[toolKey]?.function;
+    logger.error(`Tool ${toolKey} not found in available tools`);
+    return null;
   }
-
-  if (!toolDefinition) {
-    logger.warn(`[MCP][${serverName}][${toolName}] Tool definition not found, cannot create tool.`);
-    return;
-  }
-
-  return createToolInstance({
-    res,
-    provider,
-    toolName,
-    serverName,
-    toolDefinition,
-  });
-}
-
-function createToolInstance({ res, toolName, serverName, toolDefinition, provider: _provider }) {
   /** @type {LCTool} */
   const { description, parameters } = toolDefinition;
   const isGoogle = _provider === Providers.VERTEXAI || _provider === Providers.GOOGLE;
@@ -311,7 +128,15 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
     schema = z.object({ input: z.string().optional() });
   }
 
+  const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
   const normalizedToolKey = `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`;
+
+  if (!req.user?.id) {
+    logger.error(
+      `[MCP][${serverName}][${toolName}] User ID not found on request. Cannot create tool.`,
+    );
+    throw new Error(`User ID not found on request. Cannot create tool for ${toolKey}.`);
+  }
 
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
@@ -329,16 +154,14 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
       const provider = (config?.metadata?.provider || _provider)?.toLowerCase();
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
-      const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
-      const runStepDeltaEmitter = createRunStepDeltaEmitter({
+      const loginFlowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
+      const oauthStart = createOAuthStart({
         res,
         stepId,
         toolCall,
-      });
-      const oauthStart = createOAuthStart({
-        flowId,
+        loginFlowId,
         flowManager,
-        callback: runStepDeltaEmitter,
+        signal: derivedSignal,
       });
       const oauthEnd = createOAuthEnd({
         res,
@@ -384,7 +207,7 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
       return result;
     } catch (error) {
       logger.error(
-        `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
+        `[MCP][User: ${userId}][${serverName}] Error calling "${toolName}" MCP tool:`,
         error,
       );
 
@@ -397,12 +220,12 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
 
       if (isOAuthError) {
         throw new Error(
-          `[MCP][${serverName}][${toolName}] OAuth authentication required. Please check the server logs for the authentication URL.`,
+          `OAuth authentication required for ${serverName}. Please check the server logs for the authentication URL.`,
         );
       }
 
       throw new Error(
-        `[MCP][${serverName}][${toolName}] tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
+        `"${toolKey}" tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
       );
     } finally {
       // Clean up abort handler to prevent memory leaks
@@ -429,8 +252,9 @@ function createToolInstance({ res, toolName, serverName, toolDefinition, provide
  * @returns {Object} Object containing mcpConfig, appConnections, userConnections, and oauthServers
  */
 async function getMCPSetupData(userId) {
-  const config = await getAppConfig();
-  const mcpConfig = config?.mcpConfig;
+  const printConfig = false;
+  const config = await loadCustomConfig(printConfig);
+  const mcpConfig = config?.mcpServers;
 
   if (!mcpConfig) {
     throw new Error('MCP config not found');
@@ -556,7 +380,6 @@ async function getServerConnectionStatus(
 
 module.exports = {
   createMCPTool,
-  createMCPTools,
   getMCPSetupData,
   checkOAuthFlowStatus,
   getServerConnectionStatus,

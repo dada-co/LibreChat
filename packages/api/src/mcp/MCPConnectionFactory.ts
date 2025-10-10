@@ -28,7 +28,6 @@ export class MCPConnectionFactory {
   protected readonly oauthStart?: (authURL: string) => Promise<void>;
   protected readonly oauthEnd?: () => Promise<void>;
   protected readonly returnOnOAuth?: boolean;
-  protected readonly connectionTimeout?: number;
 
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
@@ -48,7 +47,6 @@ export class MCPConnectionFactory {
     });
     this.serverName = basic.serverName;
     this.useOAuth = !!oauth?.useOAuth;
-    this.connectionTimeout = oauth?.connectionTimeout;
     this.logPrefix = oauth?.user
       ? `[MCP][${basic.serverName}][${oauth.user.id}]`
       : `[MCP][${basic.serverName}]`;
@@ -84,9 +82,8 @@ export class MCPConnectionFactory {
     if (!this.tokenMethods?.findToken) return null;
 
     try {
-      const flowId = MCPOAuthHandler.generateFlowId(this.userId!, this.serverName);
       const tokens = await this.flowManager!.createFlowWithHandler(
-        flowId,
+        `tokens:${this.userId}:${this.serverName}`,
         'mcp_get_tokens',
         async () => {
           return await MCPTokenStorage.getTokens({
@@ -206,7 +203,7 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
-    const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const connectTimeout = this.serverConfig.initTimeout ?? 30000;
     const connectionTimeout = new Promise<void>((_, reject) =>
       setTimeout(
         () => reject(new Error(`Connection timeout after ${connectTimeout}ms`)),
@@ -350,7 +347,6 @@ export class MCPConnectionFactory {
         newFlowId,
         'mcp_oauth',
         flowMetadata as FlowMetadata,
-        this.signal,
       );
       if (typeof this.oauthEnd === 'function') {
         await this.oauthEnd();

@@ -7,8 +7,8 @@ import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/cl
 import { PermissionTypes, Permissions, QueryKeys, Constants } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
-import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
+import { useDocumentTitle, useHasAccess, useLocalize } from '~/hooks';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import { SidePanelProvider, useChatContext } from '~/Providers';
 import { MarketplaceProvider } from './MarketplaceContext';
@@ -381,8 +381,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                               }
                               if (displayCategory === 'all') {
                                 return {
-                                  name: localize('com_agents_all'),
-                                  description: localize('com_agents_all_description'),
+                                  name: 'All Agents',
+                                  description: 'Browse all shared agents across all categories',
                                 };
                               }
 
@@ -392,12 +392,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                               );
                               if (categoryData) {
                                 return {
-                                  name: categoryData.label?.startsWith('com_')
-                                    ? localize(categoryData.label as TranslationKeys)
-                                    : categoryData.label,
-                                  description: categoryData.description?.startsWith('com_')
-                                    ? localize(categoryData.description as TranslationKeys)
-                                    : categoryData.description || '',
+                                  name: categoryData.label,
+                                  description: categoryData.description || '',
                                 };
                               }
 
@@ -459,8 +455,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                                 }
                                 if (nextCategory === 'all') {
                                   return {
-                                    name: localize('com_agents_all'),
-                                    description: localize('com_agents_all_description'),
+                                    name: 'All Agents',
+                                    description: 'Browse all shared agents across all categories',
                                   };
                                 }
 
@@ -470,16 +466,8 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
                                 );
                                 if (categoryData) {
                                   return {
-                                    name: categoryData.label?.startsWith('com_')
-                                      ? localize(categoryData.label as TranslationKeys)
-                                      : categoryData.label,
-                                    description: categoryData.description?.startsWith('com_')
-                                      ? localize(
-                                          categoryData.description as Parameters<
-                                            typeof localize
-                                          >[0],
-                                        )
-                                      : categoryData.description || '',
+                                    name: categoryData.label,
+                                    description: categoryData.description || '',
                                   };
                                 }
 

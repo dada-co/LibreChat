@@ -6,7 +6,6 @@ const buildOptions = (endpoint, parsedBody) => {
     modelLabel: name,
     promptPrefix,
     maxContextTokens,
-    fileTokenLimit,
     resendFiles = true,
     imageDetail,
     iconURL,
@@ -25,7 +24,6 @@ const buildOptions = (endpoint, parsedBody) => {
     spec,
     promptPrefix,
     maxContextTokens,
-    fileTokenLimit,
     model_parameters,
   });
 

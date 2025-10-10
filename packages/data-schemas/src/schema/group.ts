@@ -24,7 +24,6 @@ const groupSchema = new Schema<IGroup>(
     memberIds: [
       {
         type: String,
-        required: false,
       },
     ],
     source: {

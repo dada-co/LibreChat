@@ -11,7 +11,8 @@ const { saveBufferToFirebase } = require('./crud');
  * resolution.
  *
  * @param {Object} params - The params object.
- * @param {ServerRequest} params.req - The request object from Express. It should have a `user` property with an `id` representing the user
+ * @param {Express.Request} params.req - The request object from Express. It should have a `user` property with an `id`
+ *                       representing the user, and an `app.locals.paths` object with an `imageOutput` path.
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {EModelEndpoint} params.endpoint - The params object.
@@ -25,7 +26,6 @@ const { saveBufferToFirebase } = require('./crud');
  *            - height: The height of the converted image.
  */
 async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution = 'high' }) {
-  const appConfig = req.config;
   const inputFilePath = file.path;
   const inputBuffer = await fs.promises.readFile(inputFilePath);
   const {
@@ -38,11 +38,11 @@ async function uploadImageToFirebase({ req, file, file_id, endpoint, resolution 
 
   let webPBuffer;
   let fileName = `${file_id}__${path.basename(inputFilePath)}`;
-  const targetExtension = `.${appConfig.imageOutputType}`;
+  const targetExtension = `.${req.app.locals.imageOutputType}`;
   if (extension.toLowerCase() === targetExtension) {
     webPBuffer = resizedBuffer;
   } else {
-    webPBuffer = await sharp(resizedBuffer).toFormat(appConfig.imageOutputType).toBuffer();
+    webPBuffer = await sharp(resizedBuffer).toFormat(req.app.locals.imageOutputType).toBuffer();
     // Replace or append the correct extension
     const extRegExp = new RegExp(path.extname(fileName) + '$');
     fileName = fileName.replace(extRegExp, targetExtension);

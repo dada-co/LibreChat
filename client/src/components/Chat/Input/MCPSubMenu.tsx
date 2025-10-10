@@ -3,17 +3,16 @@ import * as Ariakit from '@ariakit/react';
 import { ChevronRight } from 'lucide-react';
 import { PinIcon, MCPIcon } from '@librechat/client';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
+import { useMCPServerManager } from '~/hooks/MCP/useMCPServerManager';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
-import { useMCPServerManager } from '~/hooks';
 import { cn } from '~/utils';
 
 interface MCPSubMenuProps {
   placeholder?: string;
-  conversationId?: string | null;
 }
 
 const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
-  ({ placeholder, conversationId, ...props }, ref) => {
+  ({ placeholder, ...props }, ref) => {
     const {
       configuredServers,
       mcpValues,
@@ -24,7 +23,7 @@ const MCPSubMenu = React.forwardRef<HTMLDivElement, MCPSubMenuProps>(
       getServerStatusIconProps,
       getConfigDialogProps,
       isInitializing,
-    } = useMCPServerManager({ conversationId });
+    } = useMCPServerManager();
 
     const menuStore = Ariakit.useMenuStore({
       focusLoop: true,

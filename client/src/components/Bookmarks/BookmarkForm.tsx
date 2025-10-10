@@ -38,8 +38,6 @@ const BookmarkForm = ({
     control,
     formState: { errors },
   } = useForm<TConversationTagRequest>({
-    mode: 'onBlur',
-    reValidateMode: 'onChange',
     defaultValues: {
       tag: bookmark?.tag ?? '',
       description: bookmark?.description ?? '',
@@ -100,30 +98,23 @@ const BookmarkForm = ({
           <Input
             type="text"
             id="bookmark-tag"
-            aria-label={
-              bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
-            }
+            aria-label="Bookmark"
             {...register('tag', {
-              required: localize('com_ui_field_required'),
+              required: 'tag is required',
               maxLength: {
                 value: 128,
-                message: localize('com_ui_field_max_length', {
-                  field: localize('com_ui_bookmarks_title'),
-                  length: 128,
-                }),
+                message: localize('com_auth_password_max_length'),
               },
               validate: (value) => {
                 return (
                   value === bookmark?.tag ||
                   bookmarks.every((bookmark) => bookmark.tag !== value) ||
-                  localize('com_ui_bookmarks_tag_exists')
+                  'tag must be unique'
                 );
               },
             })}
             aria-invalid={!!errors.tag}
-            placeholder={
-              bookmark ? localize('com_ui_bookmarks_edit') : localize('com_ui_bookmarks_new')
-            }
+            placeholder="Bookmark"
           />
           {errors.tag && <span className="text-sm text-red-500">{errors.tag.message}</span>}
         </div>
@@ -136,10 +127,7 @@ const BookmarkForm = ({
             {...register('description', {
               maxLength: {
                 value: 1048,
-                message: localize('com_ui_field_max_length', {
-                  field: localize('com_ui_bookmarks_description'),
-                  length: 1048,
-                }),
+                message: 'Maximum 1048 characters',
               },
             })}
             id="bookmark-description"

@@ -182,7 +182,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const contentHandler = useContentHandler({ setMessages, getMessages });
-  const { stepHandler, clearStepMaps } = useStepHandler({
+  const stepHandler = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
@@ -480,13 +480,12 @@ export default function useEventHandlers({
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, id], _messages);
       };
 
-      const hasNoResponse =
-        responseMessage?.content?.[0]?.['text']?.value ===
-          submission.initialResponse?.content?.[0]?.['text']?.value ||
-        !!responseMessage?.content?.[0]?.['tool_call']?.auth;
-
       /** Handle edge case where stream is cancelled before any response, which creates a blank page */
-      if (!conversation.conversationId && hasNoResponse) {
+      if (
+        !conversation.conversationId &&
+        responseMessage?.content?.[0]?.['text']?.value ===
+          submission.initialResponse?.content?.[0]?.['text']?.value
+      ) {
         const currentConvoId =
           (submissionConvo.conversationId ?? conversation.conversationId) || Constants.NEW_CONVO;
         if (isNewConvo && submissionConvo.conversationId) {
@@ -807,7 +806,6 @@ export default function useEventHandlers({
   );
 
   return {
-    clearStepMaps,
     stepHandler,
     syncHandler,
     finalHandler,

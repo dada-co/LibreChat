@@ -1,8 +1,8 @@
 const { isEmailDomainAllowed, isActionDomainAllowed } = require('~/server/services/domains');
-const { getAppConfig } = require('~/server/services/Config');
+const { getCustomConfig } = require('~/server/services/Config');
 
 jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn(),
+  getCustomConfig: jest.fn(),
 }));
 
 describe('isEmailDomainAllowed', () => {
@@ -12,49 +12,49 @@ describe('isEmailDomainAllowed', () => {
 
   it('should return false if email is falsy', async () => {
     const email = '';
-    const result = isEmailDomainAllowed(email);
+    const result = await isEmailDomainAllowed(email);
     expect(result).toBe(false);
   });
 
   it('should return false if domain is not present in the email', async () => {
     const email = 'test';
-    const result = isEmailDomainAllowed(email);
+    const result = await isEmailDomainAllowed(email);
     expect(result).toBe(false);
   });
 
   it('should return true if customConfig is not available', async () => {
     const email = 'test@domain1.com';
-    getAppConfig.mockResolvedValue(null);
-    const result = isEmailDomainAllowed(email, null);
+    getCustomConfig.mockResolvedValue(null);
+    const result = await isEmailDomainAllowed(email);
     expect(result).toBe(true);
   });
 
   it('should return true if allowedDomains is not defined in customConfig', async () => {
     const email = 'test@domain1.com';
-    getAppConfig.mockResolvedValue({});
-    const result = isEmailDomainAllowed(email, undefined);
+    getCustomConfig.mockResolvedValue({});
+    const result = await isEmailDomainAllowed(email);
     expect(result).toBe(true);
   });
 
   it('should return true if domain is included in the allowedDomains', async () => {
     const email = 'user@domain1.com';
-    getAppConfig.mockResolvedValue({
+    getCustomConfig.mockResolvedValue({
       registration: {
         allowedDomains: ['domain1.com', 'domain2.com'],
       },
     });
-    const result = isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
+    const result = await isEmailDomainAllowed(email);
     expect(result).toBe(true);
   });
 
   it('should return false if domain is not included in the allowedDomains', async () => {
     const email = 'user@domain3.com';
-    getAppConfig.mockResolvedValue({
+    getCustomConfig.mockResolvedValue({
       registration: {
         allowedDomains: ['domain1.com', 'domain2.com'],
       },
     });
-    const result = isEmailDomainAllowed(email, ['domain1.com', 'domain2.com']);
+    const result = await isEmailDomainAllowed(email);
     expect(result).toBe(false);
   });
 });
@@ -80,119 +80,114 @@ describe('isActionDomainAllowed', () => {
     });
 
     it('should return false for invalid domain formats', async () => {
-      getAppConfig.mockResolvedValue({
+      getCustomConfig.mockResolvedValue({
         actions: { allowedDomains: ['http://', 'https://'] },
       });
-      expect(await isActionDomainAllowed('http://', ['http://', 'https://'])).toBe(false);
-      expect(await isActionDomainAllowed('https://', ['http://', 'https://'])).toBe(false);
+      expect(await isActionDomainAllowed('http://')).toBe(false);
+      expect(await isActionDomainAllowed('https://')).toBe(false);
     });
   });
 
   // Configuration Tests
   describe('configuration handling', () => {
     it('should return true if customConfig is null', async () => {
-      getAppConfig.mockResolvedValue(null);
-      expect(await isActionDomainAllowed('example.com', null)).toBe(true);
+      getCustomConfig.mockResolvedValue(null);
+      expect(await isActionDomainAllowed('example.com')).toBe(true);
     });
 
     it('should return true if actions.allowedDomains is not defined', async () => {
-      getAppConfig.mockResolvedValue({});
-      expect(await isActionDomainAllowed('example.com', undefined)).toBe(true);
+      getCustomConfig.mockResolvedValue({});
+      expect(await isActionDomainAllowed('example.com')).toBe(true);
     });
 
     it('should return true if allowedDomains is empty array', async () => {
-      getAppConfig.mockResolvedValue({
+      getCustomConfig.mockResolvedValue({
         actions: { allowedDomains: [] },
       });
-      expect(await isActionDomainAllowed('example.com', [])).toBe(true);
+      expect(await isActionDomainAllowed('example.com')).toBe(true);
     });
   });
 
   // Domain Matching Tests
   describe('domain matching', () => {
-    const allowedDomains = [
-      'example.com',
-      '*.subdomain.com',
-      'specific.domain.com',
-      'www.withprefix.com',
-      'swapi.dev',
-    ];
-
     beforeEach(() => {
-      getAppConfig.mockResolvedValue({
+      getCustomConfig.mockResolvedValue({
         actions: {
-          allowedDomains,
+          allowedDomains: [
+            'example.com',
+            '*.subdomain.com',
+            'specific.domain.com',
+            'www.withprefix.com',
+            'swapi.dev',
+          ],
         },
       });
     });
 
     it('should match exact domains', async () => {
-      expect(await isActionDomainAllowed('example.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('other.com', allowedDomains)).toBe(false);
-      expect(await isActionDomainAllowed('swapi.dev', allowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('example.com')).toBe(true);
+      expect(await isActionDomainAllowed('other.com')).toBe(false);
+      expect(await isActionDomainAllowed('swapi.dev')).toBe(true);
     });
 
     it('should handle domains with www prefix', async () => {
-      expect(await isActionDomainAllowed('www.example.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('www.withprefix.com', allowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('www.example.com')).toBe(true);
+      expect(await isActionDomainAllowed('www.withprefix.com')).toBe(true);
     });
 
     it('should handle full URLs', async () => {
-      expect(await isActionDomainAllowed('https://example.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('http://example.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('https://example.com/path', allowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('https://example.com')).toBe(true);
+      expect(await isActionDomainAllowed('http://example.com')).toBe(true);
+      expect(await isActionDomainAllowed('https://example.com/path')).toBe(true);
     });
 
     it('should handle wildcard subdomains', async () => {
-      expect(await isActionDomainAllowed('test.subdomain.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('any.subdomain.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('subdomain.com', allowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('test.subdomain.com')).toBe(true);
+      expect(await isActionDomainAllowed('any.subdomain.com')).toBe(true);
+      expect(await isActionDomainAllowed('subdomain.com')).toBe(true);
     });
 
     it('should handle specific subdomains', async () => {
-      expect(await isActionDomainAllowed('specific.domain.com', allowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('other.domain.com', allowedDomains)).toBe(false);
+      expect(await isActionDomainAllowed('specific.domain.com')).toBe(true);
+      expect(await isActionDomainAllowed('other.domain.com')).toBe(false);
     });
   });
 
   // Edge Cases
   describe('edge cases', () => {
-    const edgeAllowedDomains = ['example.com', '*.test.com'];
-
     beforeEach(() => {
-      getAppConfig.mockResolvedValue({
+      getCustomConfig.mockResolvedValue({
         actions: {
-          allowedDomains: edgeAllowedDomains,
+          allowedDomains: ['example.com', '*.test.com'],
         },
       });
     });
 
     it('should handle domains with query parameters', async () => {
-      expect(await isActionDomainAllowed('example.com?param=value', edgeAllowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('example.com?param=value')).toBe(true);
     });
 
     it('should handle domains with ports', async () => {
-      expect(await isActionDomainAllowed('example.com:8080', edgeAllowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('example.com:8080')).toBe(true);
     });
 
     it('should handle domains with trailing slashes', async () => {
-      expect(await isActionDomainAllowed('example.com/', edgeAllowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('example.com/')).toBe(true);
     });
 
     it('should handle case insensitivity', async () => {
-      expect(await isActionDomainAllowed('EXAMPLE.COM', edgeAllowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('Example.Com', edgeAllowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('EXAMPLE.COM')).toBe(true);
+      expect(await isActionDomainAllowed('Example.Com')).toBe(true);
     });
 
     it('should handle invalid entries in allowedDomains', async () => {
-      const invalidAllowedDomains = ['example.com', null, undefined, '', 'test.com'];
-      getAppConfig.mockResolvedValue({
+      getCustomConfig.mockResolvedValue({
         actions: {
-          allowedDomains: invalidAllowedDomains,
+          allowedDomains: ['example.com', null, undefined, '', 'test.com'],
         },
       });
-      expect(await isActionDomainAllowed('example.com', invalidAllowedDomains)).toBe(true);
-      expect(await isActionDomainAllowed('test.com', invalidAllowedDomains)).toBe(true);
+      expect(await isActionDomainAllowed('example.com')).toBe(true);
+      expect(await isActionDomainAllowed('test.com')).toBe(true);
     });
   });
 });

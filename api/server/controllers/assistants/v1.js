@@ -258,9 +258,8 @@ function filterAssistantDocs({ documents, userId, assistantsConfig = {} }) {
  */
 const getAssistantDocuments = async (req, res) => {
   try {
-    const appConfig = req.config;
     const endpoint = req.query;
-    const assistantsConfig = appConfig.endpoints?.[endpoint];
+    const assistantsConfig = req.app.locals[endpoint];
     const documents = await getAssistants(
       {},
       {
@@ -297,7 +296,6 @@ const getAssistantDocuments = async (req, res) => {
  */
 const uploadAssistantAvatar = async (req, res) => {
   try {
-    const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
     const { assistant_id } = req.params;
     if (!assistant_id) {
@@ -339,7 +337,7 @@ const uploadAssistantAvatar = async (req, res) => {
     const metadata = {
       ..._metadata,
       avatar: image.filepath,
-      avatar_source: appConfig.fileStrategy,
+      avatar_source: req.app.locals.fileStrategy,
     };
 
     const promises = [];
@@ -349,7 +347,7 @@ const uploadAssistantAvatar = async (req, res) => {
         {
           avatar: {
             filepath: image.filepath,
-            source: appConfig.fileStrategy,
+            source: req.app.locals.fileStrategy,
           },
           user: req.user.id,
         },

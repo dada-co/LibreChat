@@ -1,7 +1,6 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { logger } = require('@librechat/data-schemas');
-const { getAppConfig } = require('~/server/services/Config/app');
+const { logger } = require('~/config');
 
 const OBJECT_ID_LENGTH = 24;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
@@ -25,9 +24,8 @@ function isValidObjectId(id) {
  * Middleware to validate image request.
  * Must be set by `secureImageLinks` via custom config file.
  */
-async function validateImageRequest(req, res, next) {
-  const appConfig = await getAppConfig({ role: req.user?.role });
-  if (!appConfig.secureImageLinks) {
+function validateImageRequest(req, res, next) {
+  if (!req.app.locals.secureImageLinks) {
     return next();
   }
 

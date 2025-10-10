@@ -18,7 +18,6 @@ const initializeClient = async ({
   overrideEndpoint,
   overrideModel,
 }) => {
-  const appConfig = req.config;
   const {
     PROXY,
     OPENAI_API_KEY,
@@ -65,7 +64,7 @@ const initializeClient = async ({
 
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
   /** @type {false | TAzureConfig} */
-  const azureConfig = isAzureOpenAI && appConfig.endpoints?.[EModelEndpoint.azureOpenAI];
+  const azureConfig = isAzureOpenAI && req.app.locals[EModelEndpoint.azureOpenAI];
   let serverless = false;
   if (isAzureOpenAI && azureConfig) {
     const { modelGroupMap, groupMap } = azureConfig;
@@ -114,14 +113,15 @@ const initializeClient = async ({
   }
 
   /** @type {undefined | TBaseEndpoint} */
-  const openAIConfig = appConfig.endpoints?.[EModelEndpoint.openAI];
+  const openAIConfig = req.app.locals[EModelEndpoint.openAI];
 
   if (!isAzureOpenAI && openAIConfig) {
     clientOptions.streamRate = openAIConfig.streamRate;
     clientOptions.titleModel = openAIConfig.titleModel;
   }
 
-  const allConfig = appConfig.endpoints?.all;
+  /** @type {undefined | TBaseEndpoint} */
+  const allConfig = req.app.locals.all;
   if (allConfig) {
     clientOptions.streamRate = allConfig.streamRate;
   }

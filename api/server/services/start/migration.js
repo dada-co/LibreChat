@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const {
   logAgentMigrationWarning,
@@ -17,8 +16,7 @@ const { findRoleByIdentifier } = require('~/models');
 async function checkMigrations() {
   try {
     const agentMigrationResult = await checkAgentPermissionsMigration({
-      mongoose,
-      methods: {
+      db: {
         findRoleByIdentifier,
         getProjectByName,
       },
@@ -30,8 +28,7 @@ async function checkMigrations() {
   }
   try {
     const promptMigrationResult = await checkPromptPermissionsMigration({
-      mongoose,
-      methods: {
+      db: {
         findRoleByIdentifier,
         getProjectByName,
       },

@@ -500,11 +500,10 @@ export function openapiToFunction(
         }
       }
 
-      let contentType = '';
       if (operationObj.requestBody) {
         const requestBody = operationObj.requestBody as RequestBodyObject;
         const content = requestBody.content;
-        contentType = Object.keys(content ?? {})[0];
+        const contentType = Object.keys(content ?? {})[0];
         const schema = content?.[contentType]?.schema;
         const resolvedSchema = resolveRef(
           schema as OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject,
@@ -523,8 +522,6 @@ export function openapiToFunction(
             paramLocations[key] = 'body';
           }
         }
-
-        contentType = contentType ?? 'application/json';
       }
 
       const functionSignature = new FunctionSignature(
@@ -541,7 +538,7 @@ export function openapiToFunction(
         method,
         operationId,
         !!(operationObj['x-openai-isConsequential'] ?? false),
-        contentType,
+        operationObj.requestBody ? 'application/json' : '',
         paramLocations,
       );
 

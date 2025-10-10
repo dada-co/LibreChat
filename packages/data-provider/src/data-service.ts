@@ -182,6 +182,10 @@ export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
 };
 
+export const getEndpointsConfigOverride = (): Promise<unknown | boolean> => {
+  return request.get(endpoints.endpointsConfigOverride());
+};
+
 /* Assistants */
 
 export const createAssistant = ({
@@ -687,7 +691,7 @@ export const editArtifact = async ({
   messageId,
   ...params
 }: m.TEditArtifactRequest): Promise<m.TEditArtifactResponse> => {
-  return request.post(endpoints.messagesArtifacts(messageId), params);
+  return request.post(`/api/messages/artifact/${messageId}`, params);
 };
 
 export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage[]> {
@@ -954,8 +958,4 @@ export function getEffectivePermissions(
 // SharePoint Graph API Token
 export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTokenResponse> {
   return request.get(endpoints.graphToken(params.scopes));
-}
-
-export function getDomainServerBaseUrl(): string {
-  return `${endpoints.apiBaseUrl()}/api`;
 }

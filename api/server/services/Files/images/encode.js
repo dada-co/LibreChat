@@ -1,16 +1,13 @@
 const axios = require('axios');
-const { logger } = require('@librechat/data-schemas');
-const { logAxiosError, processTextWithTokenLimit } = require('@librechat/api');
+const { logAxiosError } = require('@librechat/api');
 const {
   FileSources,
   VisionModes,
   ImageDetail,
   ContentTypes,
   EModelEndpoint,
-  mergeFileConfig,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const countTokens = require('~/server/utils/countTokens');
 
 /**
  * Converts a readable stream to a base64 encoded string.
@@ -84,7 +81,7 @@ const blobStorageSources = new Set([FileSources.azure_blob, FileSources.s3]);
 
 /**
  * Encodes and formats the given files.
- * @param {ServerRequest} req - The request object.
+ * @param {Express.Request} req - The request object.
  * @param {Array<MongoFile>} files - The array of files to encode and format.
  * @param {EModelEndpoint} [endpoint] - Optional: The endpoint for the image.
  * @param {string} [mode] - Optional: The endpoint mode for the image.
@@ -105,28 +102,11 @@ async function encodeAndFormat(req, files, endpoint, mode) {
     return result;
   }
 
-  const fileTokenLimit =
-    req.body?.fileTokenLimit ?? mergeFileConfig(req.config?.fileConfig).fileTokenLimit;
-
   for (let file of files) {
     /** @type {FileSources} */
     const source = file.source ?? FileSources.local;
     if (source === FileSources.text && file.text) {
-      let fileText = file.text;
-
-      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
-        text: fileText,
-        tokenLimit: fileTokenLimit,
-        tokenCountFn: (text) => countTokens(text),
-      });
-
-      if (wasTruncated) {
-        logger.debug(
-          `[encodeAndFormat] Text content truncated for file: ${file.filename} due to token limits`,
-        );
-      }
-
-      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
+      result.text += `${!result.text ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${file.text}\n`;
     }
 
     if (!file.height) {
@@ -155,7 +135,7 @@ async function encodeAndFormat(req, files, endpoint, mode) {
         base64Data = null;
         continue;
       } catch (error) {
-        logger.error('Error processing image from blob storage:', error);
+        // Error handling code
       }
     } else if (source !== FileSources.local && base64Only.has(endpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);

@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '~/types';
+import type { TCustomConfig } from 'librechat-data-provider';
 
 /**
  * Default retention period for temporary chats in hours
@@ -18,12 +18,10 @@ export const MAX_RETENTION_HOURS = 8760;
 
 /**
  * Gets the temporary chat retention period from environment variables or config
- * @param interfaceConfig - The custom configuration object
+ * @param config - The custom configuration object
  * @returns The retention period in hours
  */
-export function getTempChatRetentionHours(
-  interfaceConfig?: AppConfig['interfaceConfig'] | null,
-): number {
+export function getTempChatRetentionHours(config?: Partial<TCustomConfig> | null): number {
   let retentionHours = DEFAULT_RETENTION_HOURS;
 
   // Check environment variable first
@@ -39,8 +37,8 @@ export function getTempChatRetentionHours(
   }
 
   // Check config file (takes precedence over environment variable)
-  if (interfaceConfig?.temporaryChatRetention !== undefined) {
-    const configValue = interfaceConfig.temporaryChatRetention;
+  if (config?.interface?.temporaryChatRetention !== undefined) {
+    const configValue = config.interface.temporaryChatRetention;
     if (typeof configValue === 'number' && !isNaN(configValue)) {
       retentionHours = configValue;
     } else {
@@ -68,11 +66,11 @@ export function getTempChatRetentionHours(
 
 /**
  * Creates an expiration date for temporary chats
- * @param interfaceConfig - The custom configuration object
+ * @param config - The custom configuration object
  * @returns The expiration date
  */
-export function createTempChatExpirationDate(interfaceConfig?: AppConfig['interfaceConfig']): Date {
-  const retentionHours = getTempChatRetentionHours(interfaceConfig);
+export function createTempChatExpirationDate(config?: Partial<TCustomConfig>): Date {
+  const retentionHours = getTempChatRetentionHours(config);
   const expiredAt = new Date();
   expiredAt.setHours(expiredAt.getHours() + retentionHours);
   return expiredAt;

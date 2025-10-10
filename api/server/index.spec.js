@@ -3,27 +3,9 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
-jest.mock('~/server/services/Config', () => ({
-  loadCustomConfig: jest.fn(() => Promise.resolve({})),
-  getAppConfig: jest.fn().mockResolvedValue({
-    paths: {
-      uploads: '/tmp',
-      dist: '/tmp/dist',
-      fonts: '/tmp/fonts',
-      assets: '/tmp/assets',
-    },
-    fileStrategy: 'local',
-    imageOutputType: 'PNG',
-  }),
-  setCachedTools: jest.fn(),
-}));
-
-jest.mock('~/app/clients/tools', () => ({
-  createOpenAIImageTools: jest.fn(() => []),
-  createYouTubeTools: jest.fn(() => []),
-  manifestToolMap: {},
-  toolkits: [],
-}));
+jest.mock('~/server/services/Config/loadCustomConfig', () => {
+  return jest.fn(() => Promise.resolve({}));
+});
 
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
@@ -49,22 +31,6 @@ describe('Server Configuration', () => {
   });
 
   beforeAll(async () => {
-    // Create the required directories and files for the test
-    const fs = require('fs');
-    const path = require('path');
-
-    const dirs = ['/tmp/dist', '/tmp/fonts', '/tmp/assets'];
-    dirs.forEach((dir) => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
-
-    fs.writeFileSync(
-      path.join('/tmp/dist', 'index.html'),
-      '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
-    );
-
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port

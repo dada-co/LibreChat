@@ -12,7 +12,6 @@ const buildOptions = (endpoint, parsedBody) => {
     spec,
     artifacts,
     maxContextTokens,
-    fileTokenLimit,
     ...modelOptions
   } = parsedBody;
   const endpointOption = removeNullishValues({
@@ -25,7 +24,6 @@ const buildOptions = (endpoint, parsedBody) => {
     greeting,
     spec,
     maxContextTokens,
-    fileTokenLimit,
     modelOptions,
   });
 

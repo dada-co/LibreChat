@@ -83,11 +83,7 @@ router.post(
       }
 
       let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
-      const appConfig = req.config;
-      const isDomainAllowed = await isActionDomainAllowed(
-        metadata.domain,
-        appConfig?.actions?.allowedDomains,
-      );
+      const isDomainAllowed = await isActionDomainAllowed(metadata.domain);
       if (!isDomainAllowed) {
         return res.status(400).json({ message: 'Domain not allowed' });
       }

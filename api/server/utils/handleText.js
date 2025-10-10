@@ -8,6 +8,7 @@ const {
   defaultAgentCapabilities,
 } = require('librechat-data-provider');
 const { sendEvent } = require('@librechat/api');
+const { Providers } = require('@librechat/agents');
 const partialRight = require('lodash/partialRight');
 
 /** Helper function to escape special characters in regex
@@ -206,6 +207,15 @@ function generateConfig(key, baseURL, endpoint) {
   return config;
 }
 
+/**
+ * Normalize the endpoint name to system-expected value.
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeEndpointName(name = '') {
+  return name.toLowerCase() === Providers.OLLAMA ? Providers.OLLAMA : name;
+}
+
 module.exports = {
   isEnabled,
   handleText,
@@ -216,4 +226,5 @@ module.exports = {
   generateConfig,
   addSpaceIfNeeded,
   createOnProgress,
+  normalizeEndpointName,
 };

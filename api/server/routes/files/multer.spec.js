@@ -8,7 +8,21 @@ const { createMulterInstance, storage, importFileFilter } = require('./multer');
 
 // Mock only the config service that requires external dependencies
 jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn(),
+  getCustomConfig: jest.fn(() =>
+    Promise.resolve({
+      fileConfig: {
+        endpoints: {
+          openAI: {
+            supportedMimeTypes: ['image/jpeg', 'image/png', 'application/pdf'],
+          },
+          default: {
+            supportedMimeTypes: ['image/jpeg', 'image/png', 'text/plain'],
+          },
+        },
+        serverFileSizeLimit: 10000000, // 10MB
+      },
+    }),
+  ),
 }));
 
 describe('Multer Configuration', () => {
@@ -22,13 +36,15 @@ describe('Multer Configuration', () => {
 
     mockReq = {
       user: { id: 'test-user-123' },
-      body: {},
-      originalUrl: '/api/files/upload',
-      config: {
-        paths: {
-          uploads: tempDir,
+      app: {
+        locals: {
+          paths: {
+            uploads: tempDir,
+          },
         },
       },
+      body: {},
+      originalUrl: '/api/files/upload',
     };
 
     mockFile = {
@@ -63,7 +79,7 @@ describe('Multer Configuration', () => {
 
       it("should create directory recursively if it doesn't exist", (done) => {
         const deepPath = path.join(tempDir, 'deep', 'nested', 'path');
-        mockReq.config.paths.uploads = deepPath;
+        mockReq.app.locals.paths.uploads = deepPath;
 
         const cb = jest.fn((err, destination) => {
           expect(err).toBeNull();
@@ -315,11 +331,11 @@ describe('Multer Configuration', () => {
     });
 
     it('should use real config merging', async () => {
-      const { getAppConfig } = require('~/server/services/Config');
+      const { getCustomConfig } = require('~/server/services/Config');
 
       const multerInstance = await createMulterInstance();
 
-      expect(getAppConfig).toHaveBeenCalled();
+      expect(getCustomConfig).toHaveBeenCalled();
       expect(multerInstance).toBeDefined();
     });
 
@@ -446,15 +462,26 @@ describe('Multer Configuration', () => {
       }).not.toThrow();
     });
 
-    it('should handle file system errors when directory creation fails', () => {
+    it('should handle file system errors when directory creation fails', (done) => {
       // Test with a non-existent parent directory to simulate fs issues
       const invalidPath = '/nonexistent/path/that/should/not/exist';
-      mockReq.config.paths.uploads = invalidPath;
+      mockReq.app.locals.paths.uploads = invalidPath;
 
-      // The current implementation doesn't catch errors, so they're thrown synchronously
-      expect(() => {
-        storage.getDestination(mockReq, mockFile, jest.fn());
-      }).toThrow();
+      try {
+        // Call getDestination which should fail due to permission/path issues
+        storage.getDestination(mockReq, mockFile, (err, destination) => {
+          // If callback is reached, we didn't get the expected error
+          done(new Error('Expected mkdirSync to throw an error but callback was called'));
+        });
+        // If we get here without throwing, something unexpected happened
+        done(new Error('Expected mkdirSync to throw an error but no error was thrown'));
+      } catch (error) {
+        // This is the expected behavior - mkdirSync throws synchronously for invalid paths
+        // On Linux, this typically returns EACCES (permission denied)
+        // On macOS/Darwin, this returns ENOENT (no such file or directory)
+        expect(['EACCES', 'ENOENT']).toContain(error.code);
+        done();
+      }
     });
 
     it('should handle malformed filenames with real sanitization', (done) => {
@@ -511,10 +538,10 @@ describe('Multer Configuration', () => {
 
   describe('Real Configuration Testing', () => {
     it('should handle missing custom config gracefully with real mergeFileConfig', async () => {
-      const { getAppConfig } = require('~/server/services/Config');
+      const { getCustomConfig } = require('~/server/services/Config');
 
-      // Mock getAppConfig to return undefined
-      getAppConfig.mockResolvedValueOnce(undefined);
+      // Mock getCustomConfig to return undefined
+      getCustomConfig.mockResolvedValueOnce(undefined);
 
       const multerInstance = await createMulterInstance();
       expect(multerInstance).toBeDefined();
@@ -522,28 +549,25 @@ describe('Multer Configuration', () => {
     });
 
     it('should properly integrate real fileConfig with custom endpoints', async () => {
-      const { getAppConfig } = require('~/server/services/Config');
+      const { getCustomConfig } = require('~/server/services/Config');
 
-      // Mock appConfig with fileConfig
-      getAppConfig.mockResolvedValueOnce({
-        paths: {
-          uploads: tempDir,
-        },
+      // Mock a custom config with additional endpoints
+      getCustomConfig.mockResolvedValueOnce({
         fileConfig: {
           endpoints: {
             anthropic: {
               supportedMimeTypes: ['text/plain', 'image/png'],
             },
           },
-          serverFileSizeLimit: 20971520, // 20 MB in bytes (mergeFileConfig converts)
+          serverFileSizeLimit: 20, // 20 MB
         },
       });
 
       const multerInstance = await createMulterInstance();
       expect(multerInstance).toBeDefined();
 
-      // Verify that getAppConfig was called
-      expect(getAppConfig).toHaveBeenCalled();
+      // Verify that getCustomConfig was called (we can't spy on the actual merge function easily)
+      expect(getCustomConfig).toHaveBeenCalled();
     });
   });
 });

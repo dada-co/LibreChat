@@ -1,7 +1,7 @@
-const { isEnabled } = require('@librechat/api');
 const { EModelEndpoint, CacheKeys, Constants, googleSettings } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initialize');
+const { isEnabled } = require('~/server/utils');
 const { saveConvo } = require('~/models');
 
 const addTitle = async (req, { text, response, client }) => {
@@ -14,8 +14,7 @@ const addTitle = async (req, { text, response, client }) => {
     return;
   }
   const { GOOGLE_TITLE_MODEL } = process.env ?? {};
-  const appConfig = req.config;
-  const providerConfig = appConfig.endpoints?.[EModelEndpoint.google];
+  const providerConfig = req.app.locals[EModelEndpoint.google];
   let model =
     providerConfig?.titleModel ??
     GOOGLE_TITLE_MODEL ??

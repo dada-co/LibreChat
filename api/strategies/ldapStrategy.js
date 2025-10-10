@@ -1,10 +1,10 @@
 const fs = require('fs');
+const { isEnabled } = require('@librechat/api');
 const LdapStrategy = require('passport-ldapauth');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const { createUser, findUser, updateUser, countUsers } = require('~/models');
-const { getAppConfig } = require('~/server/services/Config');
+const { getBalanceConfig } = require('~/server/services/Config');
 
 const {
   LDAP_URL,
@@ -123,7 +123,6 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
-      const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
       user = {
         provider: 'ldap',
         ldapId,
@@ -131,10 +130,9 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
         email: mail,
         emailVerified: true, // The ldap server administrator should verify the email
         name: fullName,
-        role,
+        role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       };
-      const appConfig = await getAppConfig({ role: user?.role });
-      const balanceConfig = getBalanceConfig(appConfig);
+      const balanceConfig = await getBalanceConfig();
       const userId = await createUser(user, balanceConfig);
       user._id = userId;
     } else {

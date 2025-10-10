@@ -38,7 +38,6 @@ const processCodeOutput = async ({
   messageId,
   session_id,
 }) => {
-  const appConfig = req.config;
   const currentDate = new Date();
   const baseURL = getCodeBaseURL();
   const fileExt = path.extname(name);
@@ -78,10 +77,10 @@ const processCodeOutput = async ({
       filename: name,
       conversationId,
       user: req.user.id,
-      type: `image/${appConfig.imageOutputType}`,
+      type: `image/${req.app.locals.imageOutputType}`,
       createdAt: formattedDate,
       updatedAt: formattedDate,
-      source: appConfig.fileStrategy,
+      source: req.app.locals.fileStrategy,
       context: FileContext.execute_code,
     };
     createFile(file, true);
