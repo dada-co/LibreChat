@@ -1,23 +1,16 @@
 const express = require('express');
+const { uaParser, checkBan, requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const router = express.Router();
-const { uaParser, checkBan, requireJwtAuth } = require('~/server/middleware');
-const bind = require('./bind');
-const { postMessageViaAssistant } = require('~/server/controllers/chat.assistants');
 
 const { v1 } = require('./v1');
 const chatV1 = require('./chatV1');
 const v2 = require('./v2');
 const chatV2 = require('./chatV2');
 
+router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
-
-router.use('/bind', bind);
-
-router.use(requireJwtAuth);
-
-router.post('/chat', postMessageViaAssistant);
-
+router.use(configMiddleware);
 router.use('/v1/', v1);
 router.use('/v1/chat', chatV1);
 router.use('/v2/', v2);
