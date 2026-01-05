@@ -471,9 +471,10 @@ async function processRequiredActions(client, requiredActions) {
  * @param {ServerResponse} params.res - The request object.
  * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
+ * @param {string | undefined} [params.conversationId] - The conversation ID for MCP URL replacement.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
-async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey }) {
+async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey, conversationId }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   } else if (
@@ -532,7 +533,19 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey })
     typeof agent.tools[0] === 'object' &&
     agent.tools[0].type
   ) {
-    return { tools: agent.tools }; // <-- bypass filtering
+    // Replace {conversation_id} placeholder in MCP tool URLs if conversationId is provided
+    const processedTools = agent.tools.map((tool) => {
+      if (tool.type === 'mcp' && tool.server_url && conversationId) {
+        return {
+          ...tool,
+          server_url: tool.server_url
+            .replace('{conversation_id}', conversationId)
+            .replace('<conversation_id>', conversationId),
+        };
+      }
+      return tool;
+    });
+    return { tools: processedTools }; // <-- bypass filtering
   }
 
   /** @type {ReturnType<createOnSearchResults>} */

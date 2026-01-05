@@ -101,6 +101,7 @@ const initializeAgent = async ({
       tools: agent.tools,
       model: agent.model,
       tool_resources,
+      conversationId,
     })) ?? {};
 
   agent.endpoint = provider;

@@ -29,9 +29,10 @@ function createToolLoader() {
    * @param {string} params.provider
    * @param {string} params.model
    * @param {AgentToolResources} params.tool_resources
+   * @param {string | undefined} [params.conversationId] - The conversation ID for MCP URL replacement.
    * @returns {Promise<{ tools: StructuredTool[], toolContextMap: Record<string, unknown> } | undefined>}
    */
-  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources }) {
+  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources, conversationId }) {
     const agent = { id: agentId, tools, provider, model };
     try {
       return await loadAgentTools({
@@ -39,6 +40,7 @@ function createToolLoader() {
         res,
         agent,
         tool_resources,
+        conversationId,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
