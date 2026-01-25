@@ -30,9 +30,10 @@ function createToolLoader() {
    * @param {string} params.model
    * @param {AgentToolResources} params.tool_resources
    * @param {string | undefined} [params.conversationId] - The conversation ID for MCP URL replacement.
+   * @param {string | null} [params.parentMessageId] - The parent message ID for MCP call correlation.
    * @returns {Promise<{ tools: StructuredTool[], toolContextMap: Record<string, unknown> } | undefined>}
    */
-  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources, conversationId }) {
+  return async function loadTools({ req, res, agentId, tools, provider, model, tool_resources, conversationId, parentMessageId }) {
     const agent = { id: agentId, tools, provider, model };
     try {
       return await loadAgentTools({
@@ -41,6 +42,7 @@ function createToolLoader() {
         agent,
         tool_resources,
         conversationId,
+        parentMessageId,
       });
     } catch (error) {
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -99,6 +101,8 @@ const initializeClient = async ({ req, res, endpointOption }) => {
   const requestFiles = req.body.files ?? [];
   /** @type {string} */
   const conversationId = req.body.conversationId;
+  /** @type {string | null} */
+  const parentMessageId = req.body.parentMessageId;
 
   const primaryConfig = await initializeAgent({
     req,
@@ -106,6 +110,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
     loadTools,
     requestFiles,
     conversationId,
+    parentMessageId,
     agent: primaryAgent,
     endpointOption,
     allowedProviders,
@@ -139,6 +144,7 @@ const initializeClient = async ({ req, res, endpointOption }) => {
         loadTools,
         requestFiles,
         conversationId,
+        parentMessageId,
         endpointOption,
         allowedProviders,
       });

@@ -25,6 +25,7 @@ const { getModelMaxTokens } = require('~/utils');
  * @param {ServerResponse} params.res
  * @param {Agent} params.agent
  * @param {string | null} [params.conversationId]
+ * @param {string | null} [params.parentMessageId]
  * @param {Array<IMongoFile>} [params.requestFiles]
  * @param {typeof import('~/server/services/ToolService').loadAgentTools | undefined} [params.loadTools]
  * @param {TEndpointOption} [params.endpointOption]
@@ -39,6 +40,7 @@ const initializeAgent = async ({
   loadTools,
   requestFiles,
   conversationId,
+  parentMessageId,
   endpointOption,
   allowedProviders,
   isInitialAgent = false,
@@ -102,6 +104,7 @@ const initializeAgent = async ({
       model: agent.model,
       tool_resources,
       conversationId,
+      parentMessageId,
     })) ?? {};
 
   agent.endpoint = provider;

@@ -472,9 +472,10 @@ async function processRequiredActions(client, requiredActions) {
  * @param {Pick<Agent, 'id' | 'provider' | 'model' | 'tools'} params.agent - The agent to load tools for.
  * @param {string | undefined} [params.openAIApiKey] - The OpenAI API key.
  * @param {string | undefined} [params.conversationId] - The conversation ID for MCP URL replacement.
+ * @param {string | null} [params.parentMessageId] - The parent message ID for MCP call correlation.
  * @returns {Promise<{ tools?: StructuredTool[] }>} The agent tools.
  */
-async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey, conversationId }) {
+async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey, conversationId, parentMessageId }) {
   if (!agent.tools || agent.tools.length === 0) {
     return {};
   } else if (
@@ -533,14 +534,26 @@ async function loadAgentTools({ req, res, agent, tool_resources, openAIApiKey, c
     typeof agent.tools[0] === 'object' &&
     agent.tools[0].type
   ) {
-    // Replace {conversation_id} placeholder in MCP tool URLs if conversationId is provided
+    // Replace {conversation_id} placeholder in MCP tool URLs and add correlation query params
     const processedTools = agent.tools.map((tool) => {
       if (tool.type === 'mcp' && tool.server_url && conversationId) {
+        let mcpUrl = tool.server_url
+          .replace('{conversation_id}', conversationId)
+          .replace('<conversation_id>', conversationId);
+
+        // Add correlation query parameters for tracing MCP calls back to specific prompts
+        const correlationParams = new URLSearchParams();
+        correlationParams.set('conversation_id', conversationId);
+        if (parentMessageId) {
+          correlationParams.set('parent_message_id', parentMessageId);
+        }
+
+        const separator = mcpUrl.includes('?') ? '&' : '?';
+        mcpUrl = `${mcpUrl}${separator}${correlationParams.toString()}`;
+
         return {
           ...tool,
-          server_url: tool.server_url
-            .replace('{conversation_id}', conversationId)
-            .replace('<conversation_id>', conversationId),
+          server_url: mcpUrl,
         };
       }
       return tool;
